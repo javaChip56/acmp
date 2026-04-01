@@ -174,11 +174,16 @@ The platform shall not require MiniKMS decryption on every authentication reques
 
 It shall support:
 
+- a service-consumable .NET library for HMAC authentication integration
+- optional startup preload of configured active frequently-used credentials
+- lazy loading of credentials that are not preloaded
 - in-memory cache of decrypted HMAC secrets
+- in-memory cache entries that store credential metadata and decrypted secret material together
 - cache key based on `KeyId` and `KeyVersion`
-- configurable TTL
+- short configurable TTL
 - invalidation on revoke, rotate, disable, or credential update
 - memory-only secret caching with no disk persistence
+- fail-closed behavior when credential state cannot be resolved, refreshed, or validated
 
 ### 6.4 HMAC Canonical Signing
 The HMAC implementation shall define a deterministic canonical signing model including:
@@ -288,6 +293,7 @@ The initial HMAC provider layer should include:
 
 - HMAC Credential Issuer
 - HMAC Authentication Handler / Middleware
+- HMAC Service Integration Library
 - HMAC Signature Validator
 - HMAC Canonical String Builder
 - HMAC Secret Cache

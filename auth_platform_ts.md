@@ -42,6 +42,7 @@ The initial HMAC provider layer shall contain:
 
 - HMAC Credential Issuer
 - HMAC Authentication Handler / Middleware
+- HMAC Service Integration Library
 - HMAC Canonical String Builder
 - HMAC Signature Validator
 - HMAC Secret Cache
@@ -83,6 +84,7 @@ src/
   MyCompany.AuthPlatform.Web/
   MyCompany.AuthPlatform.Api/
   MyCompany.AuthPlatform.Core/
+  MyCompany.AuthPlatform.Hmac/
   MyCompany.AuthPlatform.Persistence.Abstractions/
   MyCompany.AuthPlatform.Persistence.SqlServer/
   MyCompany.AuthPlatform.Persistence.Postgres/
@@ -98,8 +100,9 @@ tests/
 | Project | Responsibility |
 |---|---|
 | MyCompany.AuthPlatform.Web | Admin portal UI |
-| MyCompany.AuthPlatform.Api | Management endpoints and protected API integration |
+| MyCompany.AuthPlatform.Api | Management endpoints and protected API hosting |
 | MyCompany.AuthPlatform.Core | Shared business logic and provider orchestration |
+| MyCompany.AuthPlatform.Hmac | Reusable HMAC service integration library, middleware, preload policy, and runtime cache coordination |
 | MyCompany.AuthPlatform.Persistence.Abstractions | Repository contracts and persistence interfaces |
 | MyCompany.AuthPlatform.Persistence.SqlServer | SQL Server implementation |
 | MyCompany.AuthPlatform.Persistence.Postgres | PostgreSQL implementation |
@@ -344,10 +347,10 @@ key-prod-001
 ### 9.3 Runtime Validation Flow
 1. Extract HMAC headers.
 2. Validate required headers.
-3. Resolve HMAC credential by `KeyId`.
-4. Validate credential status and expiry.
-5. Retrieve decrypted secret from cache if present.
-6. On cache miss, decrypt using MiniKMS and populate cache.
+3. Resolve HMAC credential by `KeyId`, using the service integration library cache when present.
+4. Validate credential status and expiry from cached or freshly loaded metadata.
+5. Retrieve cached credential metadata and decrypted secret together if present.
+6. On cache miss, load credential metadata, decrypt using MiniKMS, and populate the cache entry.
 7. Reconstruct canonical string.
 8. Recompute signature using HMACSHA256.
 9. Compare signatures using constant-time comparison.
@@ -362,30 +365,42 @@ key-prod-001
 ## 10.0 Runtime Secret Cache Design
 
 ### 10.1 Objective
-The API shall not require MiniKMS decryption on every authentication request.
+The API and reusable HMAC service integration library shall not require database access and MiniKMS decryption on every authentication request.
 
-### 10.2 Cache Technology
+### 10.2 Service Integration Library
+The initial implementation shall provide a reusable .NET library/DLL for recipient services that:
+
+- supports optional startup preload of configured active frequently-used credentials
+- lazy loads credentials that are not preloaded
+- uses in-memory cache for runtime authentication and authorization checks
+- fails closed if required credential state cannot be loaded or refreshed
+
+### 10.3 Cache Technology
 Initial implementation shall use `IMemoryCache`.
 
-### 10.3 Cache Key
+### 10.4 Cache Key
 Recommended key format:
 
 ```text
 hmac-secret:{KeyId}:{KeyVersion}
 ```
 
-### 10.4 Cache Value
+### 10.5 Cache Value
 Cache entries may contain:
 
+- credential identifier
+- credential status
+- environment
+- assigned scopes/permissions
+- expiry timestamp
 - decrypted secret bytes
 - key version
-- expiration timestamp
 - optional supporting metadata needed for validation
 
-### 10.5 Cache TTL
-The TTL shall be configurable. A reasonable initial default is 5 to 15 minutes.
+### 10.6 Cache TTL
+The TTL shall be short and configurable. A reasonable initial default is 5 to 15 minutes.
 
-### 10.6 Invalidation Events
+### 10.7 Invalidation Events
 Cache entries shall be invalidated when:
 
 - credential is revoked
@@ -393,12 +408,12 @@ Cache entries shall be invalidated when:
 - credential is disabled
 - credential metadata affecting validity changes
 
-### 10.7 Security Constraints
+### 10.8 Security Constraints
 - Cache shall be memory-only.
 - Decrypted secrets shall not be persisted to disk.
 - Decrypted secrets shall not be logged.
 
-### 10.8 Availability Behavior
+### 10.9 Availability Behavior
 If MiniKMS is unavailable:
 - cache hit authentication may continue
 - cache miss authentication shall fail securely
@@ -578,7 +593,10 @@ Cover:
 - reject invalid signature
 - reject revoked credential
 - reject expired credential
+- preload configured active credentials at startup
+- lazy load credentials that are not preloaded
 - cache invalidation on revoke and rotate
+- reject requests securely when credential state cannot be resolved on cache miss
 - MSSQL provider behavior
 - PostgreSQL provider behavior
 

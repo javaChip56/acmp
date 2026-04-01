@@ -195,19 +195,34 @@ The system shall be designed to support nonce validation in a future phase.
 The system shall not require MiniKMS decryption on every HMAC authentication request.
 
 ### FRS-3.7.2 In-Memory Cache
-The system shall support in-memory caching of decrypted HMAC secrets.
+The system shall support in-memory caching of HMAC credential metadata and decrypted HMAC secrets.
 
 ### FRS-3.7.3 Cache Key
 The system shall key cache entries using `KeyId` and `KeyVersion`.
 
 ### FRS-3.7.4 Configurable TTL
-The system shall support configurable cache time-to-live settings.
+The system shall support short configurable cache time-to-live settings.
 
 ### FRS-3.7.5 Cache Invalidation
 The system shall invalidate relevant cache entries on credential revoke, rotate, disable, or update.
 
 ### FRS-3.7.6 Memory-Only Secret Cache
 The system shall keep decrypted secret cache entries in memory only and shall not persist them to disk.
+
+### FRS-3.7.7 Service Integration Library
+The system shall provide a reusable .NET library/DLL that recipient services can use to perform HMAC authentication and authorization.
+
+### FRS-3.7.8 Optional Startup Preload
+The library shall support optional startup preload of configured active frequently-used credentials.
+
+### FRS-3.7.9 Lazy Loading
+The library shall lazy load credentials that are not preloaded when requests are received.
+
+### FRS-3.7.10 Combined Cache Entry
+The library shall cache credential metadata and decrypted secret material together for each `KeyId` and `KeyVersion`.
+
+### FRS-3.7.11 Fail-Closed Behavior
+If the library cannot resolve, refresh, or validate required credential state, it shall reject the request securely.
 
 ---
 
