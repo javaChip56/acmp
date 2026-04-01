@@ -134,6 +134,15 @@ The system shall not support later retrieval of the plaintext HMAC secret after 
 ### FRS-3.4.6 Store Encrypted Secret Material
 The system shall store only encrypted secret material and related metadata in persistent storage.
 
+### FRS-3.4.7 Encrypted Credential Package File
+The system shall support optional issuance of an encrypted credential package file for a specific `KeyId` for service-side validation scenarios.
+
+### FRS-3.4.8 Package Protection
+The encrypted credential package file shall be protected so it can only be decrypted by the service-consumable .NET library under approved service-side protection context.
+
+### FRS-3.4.9 Package Integrity
+The encrypted credential package file shall include integrity protection so tampering is detected and validation fails securely.
+
 ---
 
 ## 3.5 MiniKMS Integration
@@ -187,6 +196,15 @@ The system shall validate request timestamp according to configured skew rules.
 ### FRS-3.6.9 Future Nonce Support
 The system shall be designed to support nonce validation in a future phase.
 
+### FRS-3.6.10 KMS-Backed Validation Mode
+The service-consumable .NET library shall support a `KmsBacked` validation mode that resolves required credential state through runtime platform/KMS-backed access.
+
+### FRS-3.6.11 Encrypted File Validation Mode
+The service-consumable .NET library shall support an `EncryptedFile` validation mode that reads an encrypted credential package file from an accessible service directory.
+
+### FRS-3.6.12 File Mode Validation Data
+In `EncryptedFile` mode, the library shall validate HMAC requests using credential metadata and protected secret material from the encrypted credential package file.
+
 ---
 
 ## 3.7 HMAC Runtime Secret Caching
@@ -223,6 +241,9 @@ The library shall cache credential metadata and decrypted secret material togeth
 
 ### FRS-3.7.11 Fail-Closed Behavior
 If the library cannot resolve, refresh, or validate required credential state, it shall reject the request securely.
+
+### FRS-3.7.12 File Refresh and Replacement
+The library shall support detecting replacement or refresh of encrypted credential package files and shall reload them securely.
 
 ---
 

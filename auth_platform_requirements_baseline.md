@@ -154,6 +154,7 @@ When issuing an HMAC credential, the platform shall:
 - protect the secret using MiniKMS before persistence
 - store only encrypted secret material and related metadata
 - show the plaintext secret once only at issuance time
+- support optional issuance of an encrypted credential package file for a specific `KeyId` for service-side validation use
 
 The platform shall not support later retrieval of the plaintext secret.
 
@@ -168,6 +169,8 @@ The platform shall support runtime HMAC authentication by:
 - comparing signatures using constant-time comparison
 - validating timestamp
 - supporting future nonce validation
+- supporting a DLL validation mode that resolves credential state through KMS-backed runtime access
+- supporting a DLL validation mode that reads an encrypted credential package file from an accessible service directory
 
 ### 6.3 HMAC Runtime Performance
 The platform shall not require MiniKMS decryption on every authentication request.
@@ -175,6 +178,7 @@ The platform shall not require MiniKMS decryption on every authentication reques
 It shall support:
 
 - a service-consumable .NET library for HMAC authentication integration
+- two validation modes for the service-consumable DLL: `KmsBacked` and `EncryptedFile`
 - optional startup preload of configured active frequently-used credentials
 - lazy loading of credentials that are not preloaded
 - in-memory cache of decrypted HMAC secrets
@@ -184,6 +188,7 @@ It shall support:
 - invalidation on revoke, rotate, disable, or credential update
 - memory-only secret caching with no disk persistence
 - fail-closed behavior when credential state cannot be resolved, refreshed, or validated
+- encrypted credential package files that are protected so they can only be decrypted by the DLL under approved service-side protection context
 
 ### 6.4 HMAC Canonical Signing
 The HMAC implementation shall define a deterministic canonical signing model including:
@@ -209,6 +214,8 @@ MiniKMS shall:
 - perform envelope encryption
 - decrypt protected secret values when required
 - support key versioning
+
+The platform may additionally issue encrypted credential package files for service-side validation, but those files shall remain protected and integrity-checked.
 - abstract master-key access
 
 ### 7.2 MiniKMS Scope

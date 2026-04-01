@@ -41,6 +41,7 @@ The shared platform layer shall contain:
 The initial HMAC provider layer shall contain:
 
 - HMAC Credential Issuer
+- HMAC Encrypted Credential Package Issuer
 - HMAC Authentication Handler / Middleware
 - HMAC Service Integration Library
 - HMAC Canonical String Builder
@@ -102,7 +103,7 @@ tests/
 | MyCompany.AuthPlatform.Web | Admin portal UI |
 | MyCompany.AuthPlatform.Api | Management endpoints and protected API hosting |
 | MyCompany.AuthPlatform.Core | Shared business logic and provider orchestration |
-| MyCompany.AuthPlatform.Hmac | Reusable HMAC service integration library, middleware, preload policy, and runtime cache coordination |
+| MyCompany.AuthPlatform.Hmac | Reusable HMAC service integration library, middleware, dual validation modes, encrypted package handling, preload policy, and runtime cache coordination |
 | MyCompany.AuthPlatform.Persistence.Abstractions | Repository contracts and persistence interfaces |
 | MyCompany.AuthPlatform.Persistence.SqlServer | SQL Server implementation |
 | MyCompany.AuthPlatform.Persistence.Postgres | PostgreSQL implementation |
@@ -166,6 +167,22 @@ Suggested fields:
 - Iv
 - Tag
 - LastUsedAt
+
+#### HmacCredentialPackage
+Represents the encrypted file artifact issued for service-side validation.
+
+Suggested fields:
+
+- KeyId
+- KeyVersion
+- CredentialStatus
+- Environment
+- Scopes
+- ExpiresAt
+- EncryptedSecret
+- PackageEncryptionMetadata
+- IntegritySignature or AuthenticatedTag
+- IssuedAt
 
 ### 5.3 Future JWT Detail Entity
 Reserved for future extension, such as:
@@ -347,18 +364,20 @@ key-prod-001
 ### 9.3 Runtime Validation Flow
 1. Extract HMAC headers.
 2. Validate required headers.
-3. Resolve HMAC credential by `KeyId`, using the service integration library cache when present.
-4. Validate credential status and expiry from cached or freshly loaded metadata.
-5. Retrieve cached credential metadata and decrypted secret together if present.
-6. On cache miss, load credential metadata, decrypt using MiniKMS, and populate the cache entry.
-7. Reconstruct canonical string.
-8. Recompute signature using HMACSHA256.
-9. Compare signatures using constant-time comparison.
-10. Validate timestamp window.
-11. Optionally validate nonce in future phase.
-12. Validate assigned scopes/permissions after successful authentication.
-13. Reject requests that are authenticated but do not have the required scope/permission for the requested operation.
-14. Establish authenticated principal for authorized requests.
+3. Determine configured validation mode: `KmsBacked` or `EncryptedFile`.
+4. Resolve HMAC credential by `KeyId`, using the service integration library cache when present.
+5. In `KmsBacked` mode, on cache miss, load credential metadata from the platform and decrypt using MiniKMS.
+6. In `EncryptedFile` mode, on cache miss, locate the encrypted credential package file in the configured accessible directory and decrypt/verify it using approved service-side protection material.
+7. Populate the cache entry with credential metadata and decrypted secret material.
+8. Validate credential status and expiry from cached or freshly loaded metadata.
+9. Reconstruct canonical string.
+10. Recompute signature using HMACSHA256.
+11. Compare signatures using constant-time comparison.
+12. Validate timestamp window.
+13. Optionally validate nonce in future phase.
+14. Validate assigned scopes/permissions after successful authentication.
+15. Reject requests that are authenticated but do not have the required scope/permission for the requested operation.
+16. Establish authenticated principal for authorized requests.
 
 ---
 
@@ -370,22 +389,31 @@ The API and reusable HMAC service integration library shall not require database
 ### 10.2 Service Integration Library
 The initial implementation shall provide a reusable .NET library/DLL for recipient services that:
 
+- supports `KmsBacked` and `EncryptedFile` validation modes
 - supports optional startup preload of configured active frequently-used credentials
 - lazy loads credentials that are not preloaded
 - uses in-memory cache for runtime authentication and authorization checks
 - fails closed if required credential state cannot be loaded or refreshed
 
-### 10.3 Cache Technology
+### 10.3 Encrypted File Mode
+In `EncryptedFile` mode, the library shall:
+
+- read encrypted credential package files from a configured service-accessible directory
+- decrypt and integrity-check package contents using approved local protection material, such as registered service certificate or equivalent protected key material
+- reject missing, tampered, expired, or unreadable package files securely
+- support reload when package files are replaced or refreshed
+
+### 10.4 Cache Technology
 Initial implementation shall use `IMemoryCache`.
 
-### 10.4 Cache Key
+### 10.5 Cache Key
 Recommended key format:
 
 ```text
 hmac-secret:{KeyId}:{KeyVersion}
 ```
 
-### 10.5 Cache Value
+### 10.6 Cache Value
 Cache entries may contain:
 
 - credential identifier
@@ -397,26 +425,32 @@ Cache entries may contain:
 - key version
 - optional supporting metadata needed for validation
 
-### 10.6 Cache TTL
+### 10.7 Cache TTL
 The TTL shall be short and configurable. A reasonable initial default is 5 to 15 minutes.
 
-### 10.7 Invalidation Events
+### 10.8 Invalidation Events
 Cache entries shall be invalidated when:
 
 - credential is revoked
 - credential is rotated
 - credential is disabled
 - credential metadata affecting validity changes
+- encrypted credential package file is replaced or refreshed
 
-### 10.8 Security Constraints
+### 10.9 Security Constraints
 - Cache shall be memory-only.
 - Decrypted secrets shall not be persisted to disk.
 - Decrypted secrets shall not be logged.
+- Encrypted credential package files shall be integrity-protected.
 
-### 10.9 Availability Behavior
+### 10.10 Availability Behavior
 If MiniKMS is unavailable:
 - cache hit authentication may continue
 - cache miss authentication shall fail securely
+
+In `EncryptedFile` mode:
+- cache hit authentication may continue while cached data remains valid
+- file read, decrypt, or integrity-check failure shall fail securely
 
 ---
 
@@ -500,6 +534,7 @@ Suggested initial endpoints:
 - POST /api/clients/{clientId}/credentials/hmac
 - POST /api/credentials/{credentialId}/rotate
 - POST /api/credentials/{credentialId}/revoke
+- POST /api/credentials/{credentialId}/issue-encrypted-package
 - GET /api/clients/{clientId}/credentials
 - GET /api/audit
 
@@ -589,13 +624,18 @@ Cover:
 Cover:
 
 - issue HMAC credential
+- issue encrypted credential package file for `KeyId`
 - authenticate valid request
 - reject invalid signature
 - reject revoked credential
 - reject expired credential
+- validate request successfully in `KmsBacked` mode
+- validate request successfully in `EncryptedFile` mode
 - preload configured active credentials at startup
 - lazy load credentials that are not preloaded
 - cache invalidation on revoke and rotate
+- reload encrypted credential package file after replacement
+- reject tampered encrypted credential package file
 - reject requests securely when credential state cannot be resolved on cache miss
 - MSSQL provider behavior
 - PostgreSQL provider behavior
