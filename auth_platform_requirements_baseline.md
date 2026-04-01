@@ -155,6 +155,7 @@ When issuing an HMAC credential, the platform shall:
 - store only encrypted secret material and related metadata
 - show the plaintext secret once only at issuance time
 - support optional issuance of an encrypted credential package file for a specific `KeyId` for service-side validation use
+- support optional issuance of an encrypted client credential package file for a specific `KeyId` for outbound client-side signing use
 
 The platform shall not support later retrieval of the plaintext secret.
 
@@ -172,12 +173,20 @@ The platform shall support runtime HMAC authentication by:
 - supporting a DLL validation mode that resolves credential state through KMS-backed runtime access
 - supporting a DLL validation mode that reads an encrypted credential package file from an accessible service directory
 
+The platform shall also support outbound HMAC request signing by:
+
+- providing a client-side DLL that loads an encrypted client credential package file
+- generating request timestamp and optional nonce values
+- constructing the defined canonical signing model
+- signing outbound requests using protected HMAC secret material
+
 ### 6.3 HMAC Runtime Performance
 The platform shall not require MiniKMS decryption on every authentication request.
 
 It shall support:
 
 - a service-consumable .NET library for HMAC authentication integration
+- a client-consumable .NET library for HMAC request signing integration
 - two validation modes for the service-consumable DLL: `KmsBacked` and `EncryptedFile`
 - optional startup preload of configured active frequently-used credentials
 - lazy loading of credentials that are not preloaded
@@ -189,6 +198,7 @@ It shall support:
 - memory-only secret caching with no disk persistence
 - fail-closed behavior when credential state cannot be resolved, refreshed, or validated
 - encrypted credential package files that are protected so they can only be decrypted by the DLL under approved service-side protection context
+- encrypted client credential package files that are protected so they can only be decrypted by the client DLL under approved client-side protection context
 
 ### 6.4 HMAC Canonical Signing
 The HMAC implementation shall define a deterministic canonical signing model including:
@@ -214,9 +224,9 @@ MiniKMS shall:
 - perform envelope encryption
 - decrypt protected secret values when required
 - support key versioning
-
-The platform may additionally issue encrypted credential package files for service-side validation, but those files shall remain protected and integrity-checked.
 - abstract master-key access
+
+The platform may additionally issue encrypted credential package files for service-side validation and encrypted client credential package files for outbound signing, but those files shall remain protected and integrity-checked.
 
 ### 7.2 MiniKMS Scope
 MiniKMS shall initially be scoped for HMAC secret protection.

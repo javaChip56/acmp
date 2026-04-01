@@ -143,6 +143,15 @@ The encrypted credential package file shall be protected so it can only be decry
 ### FRS-3.4.9 Package Integrity
 The encrypted credential package file shall include integrity protection so tampering is detected and validation fails securely.
 
+### FRS-3.4.10 Encrypted Client Package File
+The system shall support optional issuance of an encrypted client credential package file for a specific `KeyId` for outbound client-side signing scenarios.
+
+### FRS-3.4.11 Client Package Protection
+The encrypted client credential package file shall be protected so it can only be decrypted by the client-consumable .NET library under approved client-side protection context.
+
+### FRS-3.4.12 Client Package Integrity
+The encrypted client credential package file shall include integrity protection so tampering is detected and signing fails securely.
+
 ---
 
 ## 3.5 MiniKMS Integration
@@ -205,6 +214,15 @@ The service-consumable .NET library shall support an `EncryptedFile` validation 
 ### FRS-3.6.12 File Mode Validation Data
 In `EncryptedFile` mode, the library shall validate HMAC requests using credential metadata and protected secret material from the encrypted credential package file.
 
+### FRS-3.6.13 Client Signing Library
+The system shall provide a reusable client-consumable .NET library/DLL that client services can use to generate HMAC authentication headers for outbound requests.
+
+### FRS-3.6.14 Client Package Signing Mode
+The client library shall support loading an encrypted client credential package file from an accessible client directory and using its protected secret material to sign outbound requests.
+
+### FRS-3.6.15 Canonical Signing Support
+The client library shall construct the defined canonical string model and generate required HMAC headers, including timestamp and `KeyId`, for outbound requests.
+
 ---
 
 ## 3.7 HMAC Runtime Secret Caching
@@ -244,6 +262,15 @@ If the library cannot resolve, refresh, or validate required credential state, i
 
 ### FRS-3.7.12 File Refresh and Replacement
 The library shall support detecting replacement or refresh of encrypted credential package files and shall reload them securely.
+
+### FRS-3.7.13 Client Library Runtime Cache
+The client library shall support in-memory caching of decrypted client package state keyed by `KeyId` and `KeyVersion`.
+
+### FRS-3.7.14 Client Package Reload
+The client library shall support detecting replacement or refresh of encrypted client credential package files and shall reload them securely.
+
+### FRS-3.7.15 Client Fail-Closed Behavior
+If the client library cannot read, decrypt, refresh, or validate required client package state, it shall fail signing securely.
 
 ---
 

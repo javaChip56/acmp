@@ -42,8 +42,10 @@ The initial HMAC provider layer shall contain:
 
 - HMAC Credential Issuer
 - HMAC Encrypted Credential Package Issuer
+- HMAC Encrypted Client Package Issuer
 - HMAC Authentication Handler / Middleware
 - HMAC Service Integration Library
+- HMAC Client Signing Library
 - HMAC Canonical String Builder
 - HMAC Signature Validator
 - HMAC Secret Cache
@@ -86,6 +88,7 @@ src/
   MyCompany.AuthPlatform.Api/
   MyCompany.AuthPlatform.Core/
   MyCompany.AuthPlatform.Hmac/
+  MyCompany.AuthPlatform.Hmac.Client/
   MyCompany.AuthPlatform.Persistence.Abstractions/
   MyCompany.AuthPlatform.Persistence.SqlServer/
   MyCompany.AuthPlatform.Persistence.Postgres/
@@ -104,6 +107,7 @@ tests/
 | MyCompany.AuthPlatform.Api | Management endpoints and protected API hosting |
 | MyCompany.AuthPlatform.Core | Shared business logic and provider orchestration |
 | MyCompany.AuthPlatform.Hmac | Reusable HMAC service integration library, middleware, dual validation modes, encrypted package handling, preload policy, and runtime cache coordination |
+| MyCompany.AuthPlatform.Hmac.Client | Reusable client-side HMAC signing library, encrypted client package handling, canonical request signing, and runtime cache coordination |
 | MyCompany.AuthPlatform.Persistence.Abstractions | Repository contracts and persistence interfaces |
 | MyCompany.AuthPlatform.Persistence.SqlServer | SQL Server implementation |
 | MyCompany.AuthPlatform.Persistence.Postgres | PostgreSQL implementation |
@@ -179,6 +183,24 @@ Suggested fields:
 - Environment
 - Scopes
 - ExpiresAt
+- EncryptedSecret
+- PackageEncryptionMetadata
+- IntegritySignature or AuthenticatedTag
+- IssuedAt
+
+#### HmacClientCredentialPackage
+Represents the encrypted file artifact issued for client-side outbound signing.
+
+Suggested fields:
+
+- KeyId
+- KeyVersion
+- CredentialStatus
+- Environment
+- Scopes
+- ExpiresAt
+- HmacAlgorithm
+- CanonicalSigningProfile
 - EncryptedSecret
 - PackageEncryptionMetadata
 - IntegritySignature or AuthenticatedTag
@@ -403,17 +425,27 @@ In `EncryptedFile` mode, the library shall:
 - reject missing, tampered, expired, or unreadable package files securely
 - support reload when package files are replaced or refreshed
 
-### 10.4 Cache Technology
+### 10.4 Client Signing Library
+The initial implementation shall provide a reusable .NET client library/DLL that:
+
+- loads encrypted client credential package files from a configured client-accessible directory
+- decrypts and integrity-checks package contents using approved local protection material
+- constructs the defined canonical string model for outbound requests
+- generates HMAC headers, including `KeyId`, timestamp, and optional nonce
+- caches decrypted client package state in memory
+- fails signing securely if required client package state cannot be loaded or refreshed
+
+### 10.5 Cache Technology
 Initial implementation shall use `IMemoryCache`.
 
-### 10.5 Cache Key
+### 10.6 Cache Key
 Recommended key format:
 
 ```text
 hmac-secret:{KeyId}:{KeyVersion}
 ```
 
-### 10.6 Cache Value
+### 10.7 Cache Value
 Cache entries may contain:
 
 - credential identifier
@@ -425,10 +457,10 @@ Cache entries may contain:
 - key version
 - optional supporting metadata needed for validation
 
-### 10.7 Cache TTL
+### 10.8 Cache TTL
 The TTL shall be short and configurable. A reasonable initial default is 5 to 15 minutes.
 
-### 10.8 Invalidation Events
+### 10.9 Invalidation Events
 Cache entries shall be invalidated when:
 
 - credential is revoked
@@ -436,14 +468,16 @@ Cache entries shall be invalidated when:
 - credential is disabled
 - credential metadata affecting validity changes
 - encrypted credential package file is replaced or refreshed
+- encrypted client credential package file is replaced or refreshed
 
-### 10.9 Security Constraints
+### 10.10 Security Constraints
 - Cache shall be memory-only.
 - Decrypted secrets shall not be persisted to disk.
 - Decrypted secrets shall not be logged.
 - Encrypted credential package files shall be integrity-protected.
+- Encrypted client credential package files shall be integrity-protected.
 
-### 10.10 Availability Behavior
+### 10.11 Availability Behavior
 If MiniKMS is unavailable:
 - cache hit authentication may continue
 - cache miss authentication shall fail securely
@@ -451,6 +485,10 @@ If MiniKMS is unavailable:
 In `EncryptedFile` mode:
 - cache hit authentication may continue while cached data remains valid
 - file read, decrypt, or integrity-check failure shall fail securely
+
+In client package mode:
+- cached signing operations may continue while cached data remains valid
+- file read, decrypt, integrity-check, or expiry validation failure shall fail signing securely
 
 ---
 
@@ -535,13 +573,17 @@ Suggested initial endpoints:
 - POST /api/credentials/{credentialId}/rotate
 - POST /api/credentials/{credentialId}/revoke
 - POST /api/credentials/{credentialId}/issue-encrypted-package
+- POST /api/credentials/{credentialId}/issue-client-package
 - GET /api/clients/{clientId}/credentials
 - GET /api/audit
 
 ### 13.2 Protected Business APIs
 Business APIs shall use HMAC authentication middleware rather than exposing a separate validation endpoint.
 
-### 13.3 Example HMAC Issue Response
+### 13.3 Client Signing Integration
+Client services may use the client-side HMAC signing library rather than implementing canonical string construction and header generation directly.
+
+### 13.4 Example HMAC Issue Response
 
 ```json
 {
@@ -625,18 +667,23 @@ Cover:
 
 - issue HMAC credential
 - issue encrypted credential package file for `KeyId`
+- issue encrypted client credential package file for `KeyId`
 - authenticate valid request
 - reject invalid signature
 - reject revoked credential
 - reject expired credential
 - validate request successfully in `KmsBacked` mode
 - validate request successfully in `EncryptedFile` mode
+- sign outbound request successfully using client package mode
 - preload configured active credentials at startup
 - lazy load credentials that are not preloaded
 - cache invalidation on revoke and rotate
 - reload encrypted credential package file after replacement
+- reload encrypted client credential package file after replacement
 - reject tampered encrypted credential package file
+- reject tampered encrypted client credential package file
 - reject requests securely when credential state cannot be resolved on cache miss
+- fail signing securely when client package state cannot be resolved
 - MSSQL provider behavior
 - PostgreSQL provider behavior
 
