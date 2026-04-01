@@ -116,7 +116,10 @@ The platform shall support:
 The platform shall support:
 
 - assigning scopes/permissions to credentials
+- assigning scopes/permissions to HMAC credentials in the initial release
+- supporting operation-level permissions such as `read`, `write`, `delete`, or equivalent business-defined permissions
 - enforcing authorization after successful authentication
+- rejecting requests that authenticate successfully but do not have the required scope/permission
 - future provider-specific policy extension
 
 ### 5.4 Audit and Governance

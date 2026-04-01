@@ -138,7 +138,7 @@ Suggested fields:
 - AuthenticationMode
 - Status
 - Environment
-- Scopes
+- Scopes (for example `read`, `write`, `delete`, `admin`, or equivalent business-defined permissions)
 - ExpiresAt
 - RevokedAt
 - CreatedAt
@@ -353,8 +353,9 @@ key-prod-001
 9. Compare signatures using constant-time comparison.
 10. Validate timestamp window.
 11. Optionally validate nonce in future phase.
-12. Validate scopes after successful authentication.
-13. Establish authenticated principal or reject request.
+12. Validate assigned scopes/permissions after successful authentication.
+13. Reject requests that are authenticated but do not have the required scope/permission for the requested operation.
+14. Establish authenticated principal for authorized requests.
 
 ---
 

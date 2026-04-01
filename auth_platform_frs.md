@@ -237,10 +237,16 @@ The canonical signing model shall be documented clearly for client developers.
 ### FRS-3.9.1 Scope Assignment
 The system shall allow scopes or permissions to be assigned to credentials.
 
-### FRS-3.9.2 Post-Authentication Authorization
-The system shall enforce authorization after successful authentication.
+### FRS-3.9.2 HMAC Scope Support
+The system shall support assigning scopes or permissions to HMAC credentials in the initial release.
 
-### FRS-3.9.3 Provider-Specific Extensibility
+### FRS-3.9.3 Operation-Level Permissions
+The system shall support operation-level permissions such as `read`, `write`, `delete`, or equivalent business-defined permissions.
+
+### FRS-3.9.4 Post-Authentication Authorization
+The system shall enforce authorization after successful authentication and shall reject requests that do not have the required scope or permission.
+
+### FRS-3.9.5 Provider-Specific Extensibility
 The system shall support future provider-specific authorization extensions.
 
 ---
