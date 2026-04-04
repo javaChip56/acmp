@@ -54,3 +54,80 @@ These flows represent business actions described by the current requirements bas
 | Reload Recipient Credential Package | Recipient-side DLL detects encrypted credential package replacement or refresh and reloads it securely. |
 | Reload Client Credential Package | Client-side DLL detects encrypted client credential package replacement or refresh and reloads it securely. |
 | List Credential Metadata | Authorized user lists credential metadata without exposing plaintext secrets. |
+
+### Flow Transition Candidates
+
+#### Register Client Service
+1. Authorized Administrator -> Admin Web Portal
+2. Admin Web Portal -> Credential Management API
+3. Credential Management API -> Credential Persistence Store
+
+#### Update Client Service
+1. Authorized Administrator -> Admin Web Portal
+2. Admin Web Portal -> Credential Management API
+3. Credential Management API -> Credential Persistence Store
+
+#### Disable Client Service
+1. Authorized Administrator -> Admin Web Portal
+2. Admin Web Portal -> Credential Management API
+3. Credential Management API -> Credential Persistence Store
+
+#### Issue HMAC Credential
+1. Authorized Administrator -> Admin Web Portal
+2. Admin Web Portal -> Credential Management API
+3. Credential Management API -> MiniKMS
+4. Credential Management API -> Credential Persistence Store
+
+#### Rotate HMAC Credential
+1. Authorized Administrator -> Admin Web Portal
+2. Admin Web Portal -> Credential Management API
+3. Credential Management API -> MiniKMS
+4. Credential Management API -> Credential Persistence Store
+
+#### Revoke HMAC Credential
+1. Authorized Administrator -> Admin Web Portal
+2. Admin Web Portal -> Credential Management API
+3. Credential Management API -> Credential Persistence Store
+
+#### Issue Encrypted Credential Package
+1. Authorized Administrator -> Admin Web Portal
+2. Admin Web Portal -> Credential Management API
+3. Credential Management API -> Encrypted Credential Package
+
+#### Issue Encrypted Client Credential Package
+1. Authorized Administrator -> Admin Web Portal
+2. Admin Web Portal -> Credential Management API
+3. Credential Management API -> Encrypted Client Credential Package
+
+#### Validate Inbound HMAC Request (KmsBacked)
+1. Client Service -> Protected Recipient Service
+2. Protected Recipient Service -> platform or KMS-backed credential resolution path
+3. Platform credential resolution path -> Credential Persistence Store
+4. Platform credential resolution path -> MiniKMS
+5. Protected Recipient Service -> authorization decision
+
+#### Validate Inbound HMAC Request (EncryptedFile)
+1. Client Service -> Protected Recipient Service
+2. Protected Recipient Service -> Encrypted Credential Package
+3. Protected Recipient Service -> authorization decision
+
+#### Sign Outbound HMAC Request
+1. Client Service -> Encrypted Client Credential Package
+2. Client Service -> Protected Recipient Service
+
+#### Authorize Authenticated Request
+1. Client Service -> Protected Recipient Service
+2. Protected Recipient Service -> scope or permission evaluation using resolved credential state
+
+#### Reload Recipient Credential Package
+1. Protected Recipient Service -> Encrypted Credential Package
+2. Protected Recipient Service -> in-memory credential state refresh
+
+#### Reload Client Credential Package
+1. Client Service -> Encrypted Client Credential Package
+2. Client Service -> in-memory signing state refresh
+
+#### List Credential Metadata
+1. Authorized Administrator -> Admin Web Portal
+2. Admin Web Portal -> Credential Management API
+3. Credential Management API -> Credential Persistence Store

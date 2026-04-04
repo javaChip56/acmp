@@ -150,6 +150,34 @@
       }
     },
     {
+      "unique-id": "protected-recipient-service-to-persistence-store",
+      "description": "Resolves credential metadata from",
+      "relationship-type": {
+        "connects": {
+          "source": {
+            "node": "protected-recipient-service"
+          },
+          "destination": {
+            "node": "credential-persistence-store"
+          }
+        }
+      }
+    },
+    {
+      "unique-id": "protected-recipient-service-to-mini-kms",
+      "description": "Decrypts protected secret material using",
+      "relationship-type": {
+        "connects": {
+          "source": {
+            "node": "protected-recipient-service"
+          },
+          "destination": {
+            "node": "mini-kms"
+          }
+        }
+      }
+    },
+    {
       "unique-id": "client-service-to-protected-recipient-service",
       "description": "Sends HMAC-signed requests to",
       "relationship-type": {
@@ -222,6 +250,148 @@
   ],
   "flows": [
     {
+      "unique-id": "register-client-service-flow",
+      "name": "Register Client Service",
+      "description": "Authorized administrator creates a new internal client or service record through the portal and management API.",
+      "transitions": [
+        {
+          "relationship-unique-id": "administrator-uses-admin-portal",
+          "sequence-number": 1,
+          "description": "Administrator starts client or service registration from the admin portal."
+        },
+        {
+          "relationship-unique-id": "admin-portal-to-management-api",
+          "sequence-number": 2,
+          "description": "Admin portal submits the create client request to the credential management API."
+        },
+        {
+          "relationship-unique-id": "management-api-to-persistence-store",
+          "sequence-number": 3,
+          "description": "Credential management API stores the new client or service record."
+        }
+      ]
+    },
+    {
+      "unique-id": "update-client-service-flow",
+      "name": "Update Client Service",
+      "description": "Authorized administrator updates client or service metadata through the portal and management API.",
+      "transitions": [
+        {
+          "relationship-unique-id": "administrator-uses-admin-portal",
+          "sequence-number": 1,
+          "description": "Administrator opens the client or service update action in the admin portal."
+        },
+        {
+          "relationship-unique-id": "admin-portal-to-management-api",
+          "sequence-number": 2,
+          "description": "Admin portal submits the metadata update request to the credential management API."
+        },
+        {
+          "relationship-unique-id": "management-api-to-persistence-store",
+          "sequence-number": 3,
+          "description": "Credential management API persists the updated client or service metadata."
+        }
+      ]
+    },
+    {
+      "unique-id": "disable-client-service-flow",
+      "name": "Disable Client Service",
+      "description": "Authorized administrator disables a client or service through the portal and management API.",
+      "transitions": [
+        {
+          "relationship-unique-id": "administrator-uses-admin-portal",
+          "sequence-number": 1,
+          "description": "Administrator starts the disable action for the client or service from the admin portal."
+        },
+        {
+          "relationship-unique-id": "admin-portal-to-management-api",
+          "sequence-number": 2,
+          "description": "Admin portal submits the disable request to the credential management API."
+        },
+        {
+          "relationship-unique-id": "management-api-to-persistence-store",
+          "sequence-number": 3,
+          "description": "Credential management API updates persisted client or service status to disabled."
+        }
+      ]
+    },
+    {
+      "unique-id": "issue-hmac-credential-flow",
+      "name": "Issue HMAC Credential",
+      "description": "Authorized administrator issues a new HMAC credential using the portal, management API, MiniKMS, and persistence store.",
+      "transitions": [
+        {
+          "relationship-unique-id": "administrator-uses-admin-portal",
+          "sequence-number": 1,
+          "description": "Administrator starts HMAC credential issuance from the admin portal."
+        },
+        {
+          "relationship-unique-id": "admin-portal-to-management-api",
+          "sequence-number": 2,
+          "description": "Admin portal submits the HMAC credential issuance request to the credential management API."
+        },
+        {
+          "relationship-unique-id": "management-api-to-mini-kms",
+          "sequence-number": 3,
+          "description": "Credential management API requests HMAC secret generation and protection from MiniKMS."
+        },
+        {
+          "relationship-unique-id": "management-api-to-persistence-store",
+          "sequence-number": 4,
+          "description": "Credential management API persists encrypted secret material and credential metadata."
+        }
+      ]
+    },
+    {
+      "unique-id": "rotate-hmac-credential-flow",
+      "name": "Rotate HMAC Credential",
+      "description": "Authorized administrator rotates an HMAC credential using the portal, management API, MiniKMS, and persistence store.",
+      "transitions": [
+        {
+          "relationship-unique-id": "administrator-uses-admin-portal",
+          "sequence-number": 1,
+          "description": "Administrator starts HMAC credential rotation from the admin portal."
+        },
+        {
+          "relationship-unique-id": "admin-portal-to-management-api",
+          "sequence-number": 2,
+          "description": "Admin portal submits the credential rotation request to the credential management API."
+        },
+        {
+          "relationship-unique-id": "management-api-to-mini-kms",
+          "sequence-number": 3,
+          "description": "Credential management API requests new secret generation and protection from MiniKMS."
+        },
+        {
+          "relationship-unique-id": "management-api-to-persistence-store",
+          "sequence-number": 4,
+          "description": "Credential management API persists rotated credential state and related metadata."
+        }
+      ]
+    },
+    {
+      "unique-id": "revoke-hmac-credential-flow",
+      "name": "Revoke HMAC Credential",
+      "description": "Authorized administrator revokes an HMAC credential through the portal and management API.",
+      "transitions": [
+        {
+          "relationship-unique-id": "administrator-uses-admin-portal",
+          "sequence-number": 1,
+          "description": "Administrator starts credential revocation from the admin portal."
+        },
+        {
+          "relationship-unique-id": "admin-portal-to-management-api",
+          "sequence-number": 2,
+          "description": "Admin portal submits the credential revocation request to the credential management API."
+        },
+        {
+          "relationship-unique-id": "management-api-to-persistence-store",
+          "sequence-number": 3,
+          "description": "Credential management API persists revoked credential state."
+        }
+      ]
+    },
+    {
       "unique-id": "issue-encrypted-credential-package-flow",
       "name": "Issue Encrypted Credential Package",
       "description": "Authorized administrator uses the portal and management API to issue a recipient-side encrypted credential package.",
@@ -240,6 +410,108 @@
           "relationship-unique-id": "management-api-to-encrypted-credential-package",
           "sequence-number": 3,
           "description": "Credential management API issues the recipient-side encrypted credential package."
+        }
+      ]
+    },
+    {
+      "unique-id": "validate-inbound-hmac-request-kms-backed-flow",
+      "name": "Validate Inbound HMAC Request (KmsBacked)",
+      "description": "Protected recipient service validates an inbound HMAC request using cache-first runtime validation with persistence and MiniKMS on cache miss.",
+      "transitions": [
+        {
+          "relationship-unique-id": "client-service-to-protected-recipient-service",
+          "sequence-number": 1,
+          "description": "Client service sends an HMAC-signed request to the protected recipient service."
+        },
+        {
+          "relationship-unique-id": "protected-recipient-service-to-persistence-store",
+          "sequence-number": 2,
+          "description": "Protected recipient service resolves credential metadata when runtime cache is missing or stale."
+        },
+        {
+          "relationship-unique-id": "protected-recipient-service-to-mini-kms",
+          "sequence-number": 3,
+          "description": "Protected recipient service decrypts protected secret material using MiniKMS when required."
+        }
+      ]
+    },
+    {
+      "unique-id": "validate-inbound-hmac-request-encrypted-file-flow",
+      "name": "Validate Inbound HMAC Request (EncryptedFile)",
+      "description": "Protected recipient service validates an inbound HMAC request using an encrypted credential package file.",
+      "transitions": [
+        {
+          "relationship-unique-id": "client-service-to-protected-recipient-service",
+          "sequence-number": 1,
+          "description": "Client service sends an HMAC-signed request to the protected recipient service."
+        },
+        {
+          "relationship-unique-id": "protected-recipient-service-to-encrypted-credential-package",
+          "sequence-number": 2,
+          "description": "Protected recipient service loads and validates encrypted credential package contents for request validation."
+        }
+      ]
+    },
+    {
+      "unique-id": "sign-outbound-hmac-request-flow",
+      "name": "Sign Outbound HMAC Request",
+      "description": "Client service signs an outbound request using the client package and then sends the signed request to the protected recipient service.",
+      "transitions": [
+        {
+          "relationship-unique-id": "client-service-to-encrypted-client-credential-package",
+          "sequence-number": 1,
+          "description": "Client service loads protected signing material from the encrypted client credential package."
+        },
+        {
+          "relationship-unique-id": "client-service-to-protected-recipient-service",
+          "sequence-number": 2,
+          "description": "Client service sends the signed request to the protected recipient service."
+        }
+      ]
+    },
+    {
+      "unique-id": "reload-recipient-credential-package-flow",
+      "name": "Reload Recipient Credential Package",
+      "description": "Protected recipient service reloads recipient-side package state after package replacement or refresh.",
+      "transitions": [
+        {
+          "relationship-unique-id": "protected-recipient-service-to-encrypted-credential-package",
+          "sequence-number": 1,
+          "description": "Protected recipient service reads refreshed encrypted credential package contents."
+        }
+      ]
+    },
+    {
+      "unique-id": "reload-client-credential-package-flow",
+      "name": "Reload Client Credential Package",
+      "description": "Client service reloads client-side package state after package replacement or refresh.",
+      "transitions": [
+        {
+          "relationship-unique-id": "client-service-to-encrypted-client-credential-package",
+          "sequence-number": 1,
+          "description": "Client service reads refreshed encrypted client credential package contents."
+        }
+      ]
+    },
+    {
+      "unique-id": "list-credential-metadata-flow",
+      "name": "List Credential Metadata",
+      "description": "Authorized user lists credential metadata without exposing plaintext secrets.",
+      "transitions": [
+        {
+          "relationship-unique-id": "administrator-uses-admin-portal",
+          "sequence-number": 1,
+          "description": "Authorized user opens credential metadata listing in the admin portal."
+        },
+        {
+          "relationship-unique-id": "admin-portal-to-management-api",
+          "sequence-number": 2,
+          "description": "Admin portal requests credential metadata from the credential management API."
+        },
+        {
+          "relationship-unique-id": "management-api-to-persistence-store",
+          "sequence-number": 3,
+          "description": "Credential management API reads credential metadata from the persistence store."
         }
       ]
     },
