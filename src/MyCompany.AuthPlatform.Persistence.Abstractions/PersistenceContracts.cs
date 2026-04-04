@@ -37,6 +37,14 @@ public sealed class ListAuditLogEntriesRequest
     public int Take { get; init; } = 100;
 }
 
+public sealed class ListAdminUsersRequest
+{
+    public AdminUserStatus? Status { get; init; }
+    public string? Username { get; init; }
+    public int Skip { get; init; }
+    public int Take { get; init; } = 50;
+}
+
 public interface IServiceClientRepository
 {
     Task<ServiceClient?> GetByIdAsync(Guid clientId, CancellationToken cancellationToken = default);
@@ -92,6 +100,28 @@ public interface IAuditLogRepository
         CancellationToken cancellationToken = default);
 }
 
+public interface IAdminUserRepository
+{
+    Task<AdminUser?> GetByIdAsync(Guid userId, CancellationToken cancellationToken = default);
+    Task<AdminUser?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default);
+    Task<PagedResult<AdminUser>> ListAsync(
+        ListAdminUsersRequest request,
+        CancellationToken cancellationToken = default);
+    Task AddAsync(AdminUser user, CancellationToken cancellationToken = default);
+    Task UpdateAsync(AdminUser user, CancellationToken cancellationToken = default);
+}
+
+public interface IAdminUserRoleRepository
+{
+    Task<IReadOnlyList<AdminUserRoleAssignment>> ListByUserIdAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default);
+    Task ReplaceForUserAsync(
+        Guid userId,
+        IReadOnlyCollection<AdminUserRoleAssignment> roles,
+        CancellationToken cancellationToken = default);
+}
+
 public interface IAuthPlatformUnitOfWork
 {
     IServiceClientRepository ServiceClients { get; }
@@ -99,6 +129,8 @@ public interface IAuthPlatformUnitOfWork
     ICredentialScopeRepository CredentialScopes { get; }
     IHmacCredentialDetailRepository HmacCredentialDetails { get; }
     IAuditLogRepository AuditLogs { get; }
+    IAdminUserRepository AdminUsers { get; }
+    IAdminUserRoleRepository AdminUserRoles { get; }
 
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }

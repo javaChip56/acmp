@@ -900,6 +900,8 @@ Recommended initial logical stores:
 - `CredentialScope`
 - `HmacCredentialDetail`
 - `AuditLog`
+- `AdminUser`
+- `AdminUserRoleAssignment`
 - `OptionalNonce` reserved for future replay protection persistence
 
 ### 12.6 Logical Table Definitions
@@ -1001,7 +1003,49 @@ Recommended constraints and indexes:
 - unique index on `KeyId`
 - index on (`KeyVersion`)
 
-#### 12.6.5 AuditLog
+#### 12.6.5 AdminUser
+Stores local administrative identities for the embedded identity provider and management operations.
+
+| Column | Type Direction | Required | Notes |
+|---|---|---|---|
+| `UserId` | GUID / UUID | Yes | Primary key. |
+| `Username` | string | Yes | Stable login name; unique across the platform. |
+| `DisplayName` | string | Yes | Friendly display name shown in audit and admin UI. |
+| `Status` | string | Yes | Recommended values: `Active`, `Disabled`. |
+| `PasswordHash` | binary | Yes | Password-derived hash bytes; plaintext passwords shall not be stored. |
+| `PasswordSalt` | binary | Yes | Random salt used for password hashing. |
+| `PasswordHashAlgorithm` | string | Yes | Initial value `PBKDF2-SHA256`. |
+| `PasswordIterations` | integer | Yes | Hashing work factor. |
+| `LastLoginAt` | UTC timestamp | No | Last successful token issuance/login time. |
+| `CreatedAt` | UTC timestamp | Yes | Creation timestamp. |
+| `CreatedBy` | string | Yes | Actor identifier. |
+| `UpdatedAt` | UTC timestamp | Yes | Last update timestamp. |
+| `UpdatedBy` | string | Yes | Last update actor. |
+| `ConcurrencyToken` | rowversion / xmin / opaque token | No | Optimistic concurrency support. |
+
+Recommended constraints and indexes:
+
+- primary key on `UserId`
+- unique index on `Username`
+- index on (`Status`, `Username`)
+
+#### 12.6.6 AdminUserRoleAssignment
+Stores assigned administrative roles as individual rows to preserve portability across SQL Server, PostgreSQL, and in-memory mode.
+
+| Column | Type Direction | Required | Notes |
+|---|---|---|---|
+| `UserId` | GUID / UUID | Yes | Foreign key to `AdminUser.UserId`. |
+| `RoleName` | string | Yes | Expected values include `AccessViewer`, `AccessOperator`, and `AccessAdministrator`. |
+| `CreatedAt` | UTC timestamp | Yes | Assignment timestamp. |
+| `CreatedBy` | string | Yes | Actor identifier. |
+
+Recommended constraints and indexes:
+
+- composite primary key on (`UserId`, `RoleName`)
+- foreign key from `UserId` to `AdminUser.UserId`
+- index on (`RoleName`)
+
+#### 12.6.7 AuditLog
 Stores administrative and security events.
 
 | Column | Type Direction | Required | Notes |
@@ -1026,7 +1070,7 @@ Recommended constraints and indexes:
 - index on (`Actor`, `Timestamp`)
 - index on (`Action`, `Timestamp`)
 
-#### 12.6.6 OptionalNonce
+#### 12.6.8 OptionalNonce
 Reserved for future replay protection persistence and not required for the initial release implementation.
 
 Suggested future fields:
@@ -1044,6 +1088,7 @@ Recommended relationship rules:
 - one `Credential` may have many `CredentialScope` rows
 - one `Credential` in `HMAC` mode shall have exactly one `HmacCredentialDetail` row
 - one `Credential` may reference one replacement credential through `ReplacedByCredentialId`
+- one `AdminUser` may have many `AdminUserRoleAssignment` rows
 - audit events may reference clients, credentials, packages, or platform operations without strict foreign-key coupling for all target types
 
 ### 12.8 Logical Integrity Rules
@@ -1055,6 +1100,8 @@ Recommended initial integrity rules:
 - `ReplacedByCredentialId` should not equal `CredentialId`
 - `RotationGraceEndsAt` should be null unless the credential has been superseded by a replacement
 - scopes should be unique per credential
+- admin usernames should be unique platform-wide
+- embedded-identity password hashes and salts should always be stored together and never as plaintext
 - no table or column shall store plaintext secrets
 
 Some of these rules may be enforced partly in application services rather than only in database constraints to preserve portability.
@@ -1066,12 +1113,15 @@ The demo in-memory provider should model the same logical collections as the per
 - credentials keyed by `CredentialId`
 - credential scopes keyed by (`CredentialId`, `ScopeName`)
 - HMAC details keyed by `CredentialId`
+- admin users keyed by `UserId`
+- admin user roles keyed by (`UserId`, `RoleName`)
 - audit events keyed by `AuditId`
 
 Additional demo-mode rules:
 
 - data exists only for the current process lifetime
 - startup state may be empty or seeded from static demo fixtures
+- bootstrap admin users may be seeded from configuration into the in-memory store during startup
 - restart durability, migration history, and provider-specific SQL behavior do not apply
 - the provider should still enforce uniqueness, lifecycle rules, and secret-handling rules in memory
 

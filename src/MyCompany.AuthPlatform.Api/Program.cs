@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using System.Security.Claims;
+using System.Text;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Json;
@@ -41,6 +42,14 @@ if (string.Equals(authProviderOptions.Mode, AuthenticationModes.DemoHeader, Stri
         DemoAuthenticationDefaults.AuthenticationScheme,
         _ => { });
 }
+else if (string.Equals(authProviderOptions.Mode, AuthenticationModes.EmbeddedIdentity, StringComparison.OrdinalIgnoreCase))
+{
+    ValidateEmbeddedIdentityOptions(authProviderOptions.EmbeddedIdentity);
+    authenticationBuilder.AddJwtBearer(options =>
+    {
+        ConfigureLocalJwtBearer(options, authProviderOptions.EmbeddedIdentity, "Provide a valid bearer token issued by the embedded identity provider.");
+    });
+}
 else if (string.Equals(authProviderOptions.Mode, AuthenticationModes.JwtBearer, StringComparison.OrdinalIgnoreCase))
 {
     var jwtOptions = authProviderOptions.JwtBearer;
@@ -65,26 +74,7 @@ else if (string.Equals(authProviderOptions.Mode, AuthenticationModes.JwtBearer, 
             NameClaimType = jwtOptions.NameClaimType,
             RoleClaimType = ClaimTypes.Role,
         };
-        options.Events = new JwtBearerEvents
-        {
-            OnChallenge = async context =>
-            {
-                context.HandleResponse();
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                context.Response.ContentType = "application/json";
-                await context.Response.WriteAsJsonAsync(new ApiErrorResponse(
-                    "authentication_required",
-                    "Provide a valid bearer token issued by the configured identity provider."));
-            },
-            OnForbidden = async context =>
-            {
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                context.Response.ContentType = "application/json";
-                await context.Response.WriteAsJsonAsync(new ApiErrorResponse(
-                    "forbidden",
-                    "The authenticated identity is not permitted to perform this action."));
-            },
-        };
+        ConfigureBearerErrorResponses(options, "Provide a valid bearer token issued by the configured identity provider.");
     });
     builder.Services.AddTransient<AdminAccessClaimsTransformation>();
     builder.Services.AddTransient<IClaimsTransformation>(serviceProvider =>
@@ -132,6 +122,7 @@ builder.Services.AddSingleton<IAuthPlatformUnitOfWork>(serviceProvider =>
 });
 builder.Services.AddSingleton<DemoDataSeeder>();
 builder.Services.AddSingleton<AuthPlatformApplicationService>();
+builder.Services.AddSingleton<EmbeddedIdentityService>();
 
 var app = builder.Build();
 
@@ -164,6 +155,29 @@ app.MapGet("/health", (IOptions<PersistenceOptions> persistenceOptions) =>
 .WithName("GetHealth")
 .WithOpenApi();
 
+if (string.Equals(authProviderOptions.Mode, AuthenticationModes.EmbeddedIdentity, StringComparison.OrdinalIgnoreCase))
+{
+    app.MapPost("/api/auth/token", async (
+        EmbeddedIdentityTokenRequest request,
+        EmbeddedIdentityService service,
+        CancellationToken cancellationToken) =>
+    {
+        try
+        {
+            return Results.Ok(await service.IssueTokenAsync(request, cancellationToken));
+        }
+        catch (ApplicationServiceException exception)
+        {
+            return Results.Json(
+                new ApiErrorResponse(exception.ErrorCode, exception.Message),
+                statusCode: exception.StatusCode);
+        }
+    })
+    .AllowAnonymous()
+    .WithName("IssueEmbeddedIdentityToken")
+    .WithOpenApi();
+}
+
 app.MapGet("/api/system/info", (
     IOptions<PersistenceOptions> persistenceOptions,
     IOptions<DemoModeOptions> demoOptions) =>
@@ -179,6 +193,8 @@ app.MapGet("/api/system/info", (
             "This host currently uses the demo-only in-memory persistence provider.",
             authProviderOptions.Mode == AuthenticationModes.DemoHeader
                 ? "Demo authentication is implemented through an ASP.NET Core header-backed scheme using X-Demo-Role and X-Demo-Actor."
+                : authProviderOptions.Mode == AuthenticationModes.EmbeddedIdentity
+                    ? "Authentication is implemented through an embedded identity provider that issues local bearer tokens."
                 : "Authentication is implemented through JWT bearer tokens issued by the configured identity provider.",
             "Restarting the process clears the in-memory demo data."
         ],
@@ -302,10 +318,73 @@ app.Run();
 
 static string ResolveAuthenticationScheme(AuthProviderOptions options)
 {
-    if (string.Equals(options.Mode, AuthenticationModes.JwtBearer, StringComparison.OrdinalIgnoreCase))
+    if (string.Equals(options.Mode, AuthenticationModes.JwtBearer, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(options.Mode, AuthenticationModes.EmbeddedIdentity, StringComparison.OrdinalIgnoreCase))
     {
         return JwtBearerDefaults.AuthenticationScheme;
     }
 
     return DemoAuthenticationDefaults.AuthenticationScheme;
+}
+
+static void ValidateEmbeddedIdentityOptions(EmbeddedIdentityAuthOptions options)
+{
+    if (string.IsNullOrWhiteSpace(options.Issuer))
+    {
+        throw new InvalidOperationException("Authentication:EmbeddedIdentity:Issuer must be configured when Authentication:Mode is EmbeddedIdentity.");
+    }
+
+    if (string.IsNullOrWhiteSpace(options.Audience))
+    {
+        throw new InvalidOperationException("Authentication:EmbeddedIdentity:Audience must be configured when Authentication:Mode is EmbeddedIdentity.");
+    }
+
+    if (string.IsNullOrWhiteSpace(options.SigningKey) || Encoding.UTF8.GetByteCount(options.SigningKey) < 32)
+    {
+        throw new InvalidOperationException("Authentication:EmbeddedIdentity:SigningKey must be configured and at least 32 bytes long when Authentication:Mode is EmbeddedIdentity.");
+    }
+
+}
+
+static void ConfigureLocalJwtBearer(JwtBearerOptions options, EmbeddedIdentityAuthOptions embeddedIdentityOptions, string challengeMessage)
+{
+    options.MapInboundClaims = false;
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidIssuer = embeddedIdentityOptions.Issuer,
+        ValidateAudience = true,
+        ValidAudience = embeddedIdentityOptions.Audience,
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(embeddedIdentityOptions.SigningKey)),
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.FromMinutes(1),
+        NameClaimType = ClaimTypes.Name,
+        RoleClaimType = ClaimTypes.Role,
+    };
+    ConfigureBearerErrorResponses(options, challengeMessage);
+}
+
+static void ConfigureBearerErrorResponses(JwtBearerOptions options, string challengeMessage)
+{
+    options.Events = new JwtBearerEvents
+    {
+        OnChallenge = async context =>
+        {
+            context.HandleResponse();
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsJsonAsync(new ApiErrorResponse(
+                "authentication_required",
+                challengeMessage));
+        },
+        OnForbidden = async context =>
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsJsonAsync(new ApiErrorResponse(
+                "forbidden",
+                "The authenticated identity is not permitted to perform this action."));
+        },
+    };
 }

@@ -4,17 +4,20 @@ using MyCompany.Shared.Contracts.Domain;
 
 namespace MyCompany.AuthPlatform.Api;
 
-public sealed class DemoDataSeeder
+internal sealed class DemoDataSeeder
 {
     private readonly IAuthPlatformUnitOfWork _unitOfWork;
     private readonly DemoModeOptions _options;
+    private readonly AuthProviderOptions _authProviderOptions;
 
     public DemoDataSeeder(
         IAuthPlatformUnitOfWork unitOfWork,
-        IOptions<DemoModeOptions> options)
+        IOptions<DemoModeOptions> options,
+        IOptions<AuthProviderOptions> authProviderOptions)
     {
         _unitOfWork = unitOfWork;
         _options = options.Value;
+        _authProviderOptions = authProviderOptions.Value;
     }
 
     public async Task SeedAsync(CancellationToken cancellationToken = default)
@@ -23,6 +26,8 @@ public sealed class DemoDataSeeder
         {
             return;
         }
+
+        await SeedAdminUsersAsync(cancellationToken);
 
         var existingClients = await _unitOfWork.ServiceClients.ListAsync(
             new ListServiceClientsRequest { Take = 1 },
@@ -247,6 +252,59 @@ public sealed class DemoDataSeeder
             cancellationToken);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task SeedAdminUsersAsync(CancellationToken cancellationToken)
+    {
+        foreach (var configuredUser in _authProviderOptions.EmbeddedIdentity.Users)
+        {
+            if (string.IsNullOrWhiteSpace(configuredUser.Username) || string.IsNullOrWhiteSpace(configuredUser.Password))
+            {
+                continue;
+            }
+
+            var existing = await _unitOfWork.AdminUsers.GetByUsernameAsync(configuredUser.Username.Trim(), cancellationToken);
+            if (existing is not null)
+            {
+                continue;
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var passwordMaterial = EmbeddedIdentityPasswordHasher.HashPassword(configuredUser.Password);
+            var user = new AdminUser
+            {
+                UserId = Guid.NewGuid(),
+                Username = configuredUser.Username.Trim(),
+                DisplayName = string.IsNullOrWhiteSpace(configuredUser.DisplayName)
+                    ? configuredUser.Username.Trim()
+                    : configuredUser.DisplayName.Trim(),
+                Status = AdminUserStatus.Active,
+                PasswordHash = passwordMaterial.Hash,
+                PasswordSalt = passwordMaterial.Salt,
+                PasswordHashAlgorithm = EmbeddedIdentityPasswordHasher.Algorithm,
+                PasswordIterations = passwordMaterial.Iterations,
+                CreatedAt = now,
+                CreatedBy = "seed.demo",
+                UpdatedAt = now,
+                UpdatedBy = "seed.demo",
+                ConcurrencyToken = Guid.NewGuid().ToString("N"),
+            };
+
+            await _unitOfWork.AdminUsers.AddAsync(user, cancellationToken);
+            await _unitOfWork.AdminUserRoles.ReplaceForUserAsync(
+                user.UserId,
+                configuredUser.Roles
+                    .Where(role => !string.IsNullOrWhiteSpace(role))
+                    .Select(role => new AdminUserRoleAssignment
+                    {
+                        UserId = user.UserId,
+                        RoleName = role.Trim(),
+                        CreatedAt = now,
+                        CreatedBy = "seed.demo",
+                    })
+                    .ToArray(),
+                cancellationToken);
+        }
     }
 
     private static HmacCredentialDetail CreateHmacDetail(Guid credentialId, string keyId, string keyVersion)

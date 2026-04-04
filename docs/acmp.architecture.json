@@ -8,7 +8,7 @@
       "unique-id": "acmp-platform",
       "node-type": "system",
       "name": "Authentication Credential Management Platform",
-      "description": "Central internal platform for service and client registration, credential lifecycle management, HMAC issuance, authorization metadata, and audit governance."
+      "description": "Central internal platform for service and client registration, administrative identity and role management, credential lifecycle management, HMAC issuance, authorization metadata, and audit governance."
     },
     {
       "unique-id": "access-viewer",
@@ -38,7 +38,13 @@
       "unique-id": "credential-management-api",
       "node-type": "service",
       "name": "Credential Management API",
-      "description": "Management API that supports client registration, credential issuance, rotation, revocation, package issuance, and audit-related operations."
+      "description": "Management API that supports administrative user management, client registration, credential issuance, rotation, revocation, package issuance, and audit-related operations."
+    },
+    {
+      "unique-id": "embedded-identity-provider",
+      "node-type": "service",
+      "name": "Embedded Identity Provider",
+      "description": "Application-local identity component that authenticates administrative users from persisted records and issues bearer tokens for management API access."
     },
     {
       "unique-id": "protected-recipient-service",
@@ -62,7 +68,7 @@
       "unique-id": "credential-persistence-store",
       "node-type": "database",
       "name": "Credential Persistence Store",
-      "description": "SQL Server or PostgreSQL data store holding service and client records, credential metadata, HMAC detail records, and audit data."
+      "description": "SQL Server, PostgreSQL, or demo in-memory store holding service and client records, credential metadata, HMAC detail records, persisted admin users, admin role assignments, and audit data."
     },
     {
       "unique-id": "encrypted-credential-package",
@@ -130,12 +136,41 @@
       "protocol": "HTTPS"
     },
     {
+      "unique-id": "admin-portal-to-embedded-identity-provider",
+      "description": "Submits local administrative sign-in requests to",
+      "relationship-type": {
+        "connects": {
+          "source": {
+            "node": "admin-web-portal"
+          },
+          "destination": {
+            "node": "embedded-identity-provider"
+          }
+        }
+      },
+      "protocol": "HTTPS"
+    },
+    {
       "unique-id": "management-api-to-persistence-store",
-      "description": "Reads and persists client, credential, and audit data in",
+      "description": "Reads and persists client, credential, admin-user, and audit data in",
       "relationship-type": {
         "connects": {
           "source": {
             "node": "credential-management-api"
+          },
+          "destination": {
+            "node": "credential-persistence-store"
+          }
+        }
+      }
+    },
+    {
+      "unique-id": "embedded-identity-provider-to-persistence-store",
+      "description": "Reads persisted administrative users and role assignments from",
+      "relationship-type": {
+        "connects": {
+          "source": {
+            "node": "embedded-identity-provider"
           },
           "destination": {
             "node": "credential-persistence-store"
@@ -264,7 +299,8 @@
           "container": "acmp-platform",
           "nodes": [
             "admin-web-portal",
-            "credential-management-api"
+            "credential-management-api",
+            "embedded-identity-provider"
           ]
         }
       }
@@ -285,6 +321,50 @@
     }
   ],
   "flows": [
+    {
+      "unique-id": "authenticate-administrative-user-flow",
+      "name": "Authenticate Administrative User",
+      "description": "An access user signs in through the admin portal, the embedded identity provider validates persisted credentials and role assignments, and a bearer token is issued for later management API calls.",
+      "transitions": [
+        {
+          "relationship-unique-id": "access-viewer-uses-admin-portal",
+          "sequence-number": 1,
+          "description": "An access user opens the sign-in experience in the admin portal."
+        },
+        {
+          "relationship-unique-id": "admin-portal-to-embedded-identity-provider",
+          "sequence-number": 2,
+          "description": "Admin portal submits local username and password credentials to the embedded identity provider."
+        },
+        {
+          "relationship-unique-id": "embedded-identity-provider-to-persistence-store",
+          "sequence-number": 3,
+          "description": "Embedded identity provider loads persisted admin-user records, password hashes, and role assignments and updates login metadata."
+        }
+      ]
+    },
+    {
+      "unique-id": "manage-administrative-users-flow",
+      "name": "Manage Administrative Users",
+      "description": "AccessAdministrator creates, updates, disables, or re-roles persisted administrative users through the admin portal and management API.",
+      "transitions": [
+        {
+          "relationship-unique-id": "access-administrator-uses-admin-portal",
+          "sequence-number": 1,
+          "description": "AccessAdministrator opens administrative user management in the admin portal."
+        },
+        {
+          "relationship-unique-id": "admin-portal-to-management-api",
+          "sequence-number": 2,
+          "description": "Admin portal submits create, update, disable, password-reset, or role-assignment requests to the credential management API."
+        },
+        {
+          "relationship-unique-id": "management-api-to-persistence-store",
+          "sequence-number": 3,
+          "description": "Credential management API persists administrative user records, password material, role assignments, and related audit metadata."
+        }
+      ]
+    },
     {
       "unique-id": "register-client-service-flow",
       "name": "Register Client Service",

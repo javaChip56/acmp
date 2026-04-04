@@ -25,6 +25,8 @@ public sealed class InMemoryAuthPlatformUnitOfWork : IAuthPlatformUnitOfWork
         CredentialScopes = new InMemoryCredentialScopeRepository(_state);
         HmacCredentialDetails = new InMemoryHmacCredentialDetailRepository(_state);
         AuditLogs = new InMemoryAuditLogRepository(_state);
+        AdminUsers = new InMemoryAdminUserRepository(_state);
+        AdminUserRoles = new InMemoryAdminUserRoleRepository(_state);
     }
 
     public IServiceClientRepository ServiceClients { get; }
@@ -36,6 +38,10 @@ public sealed class InMemoryAuthPlatformUnitOfWork : IAuthPlatformUnitOfWork
     public IHmacCredentialDetailRepository HmacCredentialDetails { get; }
 
     public IAuditLogRepository AuditLogs { get; }
+
+    public IAdminUserRepository AdminUsers { get; }
+
+    public IAdminUserRoleRepository AdminUserRoles { get; }
 
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 }
@@ -49,6 +55,9 @@ public sealed class InMemoryPersistenceState
     internal Dictionary<Guid, HmacCredentialDetail> HmacCredentialDetails { get; } = new();
     internal Dictionary<string, Guid> KeyIds { get; } = new(StringComparer.Ordinal);
     internal Dictionary<Guid, AuditLogEntry> AuditLogs { get; } = new();
+    internal Dictionary<Guid, AdminUser> AdminUsers { get; } = new();
+    internal Dictionary<string, Guid> AdminUsernames { get; } = new(StringComparer.OrdinalIgnoreCase);
+    internal Dictionary<(Guid UserId, string RoleName), AdminUserRoleAssignment> AdminUserRoles { get; } = new();
 }
 
 internal sealed class InMemoryServiceClientRepository : IServiceClientRepository
@@ -536,6 +545,189 @@ internal sealed class InMemoryAuditLogRepository : IAuditLogRepository
             Outcome = entry.Outcome,
             CorrelationId = entry.CorrelationId,
             MetadataJson = entry.MetadataJson,
+        };
+}
+
+internal sealed class InMemoryAdminUserRepository : IAdminUserRepository
+{
+    private readonly InMemoryPersistenceState _state;
+
+    public InMemoryAdminUserRepository(InMemoryPersistenceState state) => _state = state;
+
+    public Task<AdminUser?> GetByIdAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        lock (_state.SyncRoot)
+        {
+            return Task.FromResult(
+                _state.AdminUsers.TryGetValue(userId, out var user) ? Clone(user) : null);
+        }
+    }
+
+    public Task<AdminUser?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default)
+    {
+        lock (_state.SyncRoot)
+        {
+            if (!_state.AdminUsernames.TryGetValue(username, out var userId))
+            {
+                return Task.FromResult<AdminUser?>(null);
+            }
+
+            return Task.FromResult(
+                _state.AdminUsers.TryGetValue(userId, out var user) ? Clone(user) : null);
+        }
+    }
+
+    public Task<PagedResult<AdminUser>> ListAsync(
+        ListAdminUsersRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        lock (_state.SyncRoot)
+        {
+            var query = _state.AdminUsers.Values.AsEnumerable();
+
+            if (request.Status.HasValue)
+            {
+                query = query.Where(item => item.Status == request.Status.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Username))
+            {
+                query = query.Where(item => string.Equals(item.Username, request.Username, StringComparison.OrdinalIgnoreCase));
+            }
+
+            var ordered = query
+                .OrderBy(item => item.Username, StringComparer.OrdinalIgnoreCase)
+                .Select(Clone)
+                .ToList();
+
+            return Task.FromResult(Pagination.Paginate(ordered, request.Skip, request.Take));
+        }
+    }
+
+    public Task AddAsync(AdminUser user, CancellationToken cancellationToken = default)
+    {
+        lock (_state.SyncRoot)
+        {
+            if (_state.AdminUsers.ContainsKey(user.UserId))
+            {
+                throw new InvalidOperationException($"Admin user '{user.UserId}' already exists.");
+            }
+
+            if (_state.AdminUsernames.ContainsKey(user.Username))
+            {
+                throw new InvalidOperationException($"Admin username '{user.Username}' already exists.");
+            }
+
+            _state.AdminUsers[user.UserId] = Clone(user);
+            _state.AdminUsernames[user.Username] = user.UserId;
+            return Task.CompletedTask;
+        }
+    }
+
+    public Task UpdateAsync(AdminUser user, CancellationToken cancellationToken = default)
+    {
+        lock (_state.SyncRoot)
+        {
+            if (!_state.AdminUsers.TryGetValue(user.UserId, out var existing))
+            {
+                throw new KeyNotFoundException($"Admin user '{user.UserId}' was not found.");
+            }
+
+            if (!string.Equals(existing.Username, user.Username, StringComparison.OrdinalIgnoreCase) &&
+                _state.AdminUsernames.ContainsKey(user.Username))
+            {
+                throw new InvalidOperationException($"Admin username '{user.Username}' already exists.");
+            }
+
+            _state.AdminUsernames.Remove(existing.Username);
+            _state.AdminUsers[user.UserId] = Clone(user);
+            _state.AdminUsernames[user.Username] = user.UserId;
+            return Task.CompletedTask;
+        }
+    }
+
+    private static AdminUser Clone(AdminUser user) =>
+        new()
+        {
+            UserId = user.UserId,
+            Username = user.Username,
+            DisplayName = user.DisplayName,
+            Status = user.Status,
+            PasswordHash = user.PasswordHash.ToArray(),
+            PasswordSalt = user.PasswordSalt.ToArray(),
+            PasswordHashAlgorithm = user.PasswordHashAlgorithm,
+            PasswordIterations = user.PasswordIterations,
+            LastLoginAt = user.LastLoginAt,
+            CreatedAt = user.CreatedAt,
+            CreatedBy = user.CreatedBy,
+            UpdatedAt = user.UpdatedAt,
+            UpdatedBy = user.UpdatedBy,
+            ConcurrencyToken = user.ConcurrencyToken,
+        };
+}
+
+internal sealed class InMemoryAdminUserRoleRepository : IAdminUserRoleRepository
+{
+    private readonly InMemoryPersistenceState _state;
+
+    public InMemoryAdminUserRoleRepository(InMemoryPersistenceState state) => _state = state;
+
+    public Task<IReadOnlyList<AdminUserRoleAssignment>> ListByUserIdAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        lock (_state.SyncRoot)
+        {
+            var roles = _state.AdminUserRoles.Values
+                .Where(item => item.UserId == userId)
+                .OrderBy(item => item.RoleName, StringComparer.Ordinal)
+                .Select(Clone)
+                .ToList();
+
+            return Task.FromResult<IReadOnlyList<AdminUserRoleAssignment>>(roles);
+        }
+    }
+
+    public Task ReplaceForUserAsync(
+        Guid userId,
+        IReadOnlyCollection<AdminUserRoleAssignment> roles,
+        CancellationToken cancellationToken = default)
+    {
+        lock (_state.SyncRoot)
+        {
+            if (!_state.AdminUsers.ContainsKey(userId))
+            {
+                throw new KeyNotFoundException($"Admin user '{userId}' was not found.");
+            }
+
+            foreach (var key in _state.AdminUserRoles.Keys.Where(key => key.UserId == userId).ToList())
+            {
+                _state.AdminUserRoles.Remove(key);
+            }
+
+            foreach (var role in roles)
+            {
+                var key = (userId, role.RoleName);
+                if (_state.AdminUserRoles.ContainsKey(key))
+                {
+                    throw new InvalidOperationException(
+                        $"Role '{role.RoleName}' is duplicated for admin user '{userId}'.");
+                }
+
+                _state.AdminUserRoles[key] = Clone(role);
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
+    private static AdminUserRoleAssignment Clone(AdminUserRoleAssignment role) =>
+        new()
+        {
+            UserId = role.UserId,
+            RoleName = role.RoleName,
+            CreatedAt = role.CreatedAt,
+            CreatedBy = role.CreatedBy,
         };
 }
 

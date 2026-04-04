@@ -5,6 +5,7 @@ namespace MyCompany.AuthPlatform.Api;
 internal static class AuthenticationModes
 {
     public const string DemoHeader = "DemoHeader";
+    public const string EmbeddedIdentity = "EmbeddedIdentity";
     public const string JwtBearer = "JwtBearer";
 }
 
@@ -14,7 +15,33 @@ internal sealed class AuthProviderOptions
 
     public string Mode { get; set; } = AuthenticationModes.DemoHeader;
 
+    public EmbeddedIdentityAuthOptions EmbeddedIdentity { get; set; } = new();
+
     public JwtBearerAuthOptions JwtBearer { get; set; } = new();
+}
+
+internal sealed class EmbeddedIdentityAuthOptions
+{
+    public string Issuer { get; set; } = "acmp-embedded-identity";
+
+    public string Audience { get; set; } = "acmp-api";
+
+    public string SigningKey { get; set; } = "ReplaceThisEmbeddedIdentitySigningKey123!";
+
+    public int AccessTokenLifetimeMinutes { get; set; } = 60;
+
+    public List<EmbeddedIdentityUserOptions> Users { get; set; } = [];
+}
+
+internal sealed class EmbeddedIdentityUserOptions
+{
+    public string Username { get; set; } = string.Empty;
+
+    public string Password { get; set; } = string.Empty;
+
+    public string? DisplayName { get; set; }
+
+    public List<string> Roles { get; set; } = [];
 }
 
 internal sealed class JwtBearerAuthOptions

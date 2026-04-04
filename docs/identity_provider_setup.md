@@ -2,10 +2,52 @@
 
 The API host can now authenticate with either:
 
-- `Authentication:Mode = DemoHeader`
+- `Authentication:Mode = EmbeddedIdentity`
 - `Authentication:Mode = JwtBearer`
 
-## JWT Bearer Mode
+## Embedded Identity Mode
+
+When `Authentication:Mode` is set to `EmbeddedIdentity`, the application acts as
+its own local identity provider and issues bearer tokens from `POST /api/auth/token`.
+
+Example configuration:
+
+```json
+{
+  "Authentication": {
+    "Mode": "EmbeddedIdentity",
+    "EmbeddedIdentity": {
+      "Issuer": "acmp-embedded-identity",
+      "Audience": "acmp-api",
+      "SigningKey": "AcmpEmbeddedIdentitySigningKey123456789!",
+      "AccessTokenLifetimeMinutes": 60,
+      "Users": [
+        {
+          "Username": "administrator.demo",
+          "Password": "AdministratorPass!123",
+          "DisplayName": "Demo Administrator",
+          "Roles": [ "AccessAdministrator" ]
+        }
+      ]
+    }
+  }
+}
+```
+
+Example token request:
+
+```json
+{
+  "username": "administrator.demo",
+  "password": "AdministratorPass!123"
+}
+```
+
+The response contains a bearer token that can be sent to protected endpoints.
+
+Configured bootstrap users are intended to seed the persisted admin-user store. After initial seeding, authentication should read from the stored user records rather than treating configuration as the long-term source of truth.
+
+## External JWT Bearer Mode
 
 When `Authentication:Mode` is set to `JwtBearer`, configure these values in
 [appsettings.json](d:/Research/acmp/src/MyCompany.AuthPlatform.Api/appsettings.json)
@@ -52,5 +94,5 @@ the defaults can remain unchanged.
 ## Notes
 
 - The current demo host still uses the in-memory persistence provider unless you change persistence configuration separately.
-- In `JwtBearer` mode, the host expects a bearer token on protected endpoints instead of `X-Demo-Role`.
-- The endpoint authorization policies are unchanged between demo and JWT modes.
+- In both `EmbeddedIdentity` and `JwtBearer` modes, the host expects a bearer token on protected endpoints.
+- The endpoint authorization policies are unchanged between embedded and external JWT modes.

@@ -15,7 +15,7 @@ The current default configuration uses:
 
 - `Persistence:Provider = InMemoryDemo`
 - `DemoMode:SeedOnStartup = true`
-- `Authentication:Mode = DemoHeader`
+- `Authentication:Mode = EmbeddedIdentity`
 
 ## What Demo Mode Does
 
@@ -23,12 +23,13 @@ The current default configuration uses:
 - seeds a small sample dataset on startup
 - stores all data in process memory only
 - clears all data when the process stops or restarts
-- authenticates requests through a demo header-backed ASP.NET Core authentication scheme
+- authenticates requests through an embedded identity provider that issues bearer tokens
 - enforces role authorization policies for viewer, operator, and administrator access
 
 ## Useful Endpoints
 
 - `GET /health`
+- `POST /api/auth/token`
 - `GET /api/system/info`
 - `GET /api/clients`
 - `GET /api/clients/{clientId}`
@@ -40,19 +41,25 @@ The current default configuration uses:
 - `POST /api/credentials/{credentialId}/revoke`
 - `GET /api/audit`
 
-## Demo Headers
+## Bootstrap Users
 
-- `X-Demo-Role: AccessViewer` for read-only client and credential listing
-- `X-Demo-Role: AccessOperator` for client creation, credential issuance, rotation, and revocation up to the standard grace-period limit
-- `X-Demo-Role: AccessAdministrator` for the same write operations plus audit log access and extended grace periods beyond 14 days
-- `X-Demo-Actor: your.name` to stamp a friendlier actor name into the audit log
-- `X-Correlation-Id: value` to preserve a caller-supplied correlation id; one is generated automatically when omitted
+- `viewer.demo / ViewerPass!123`
+- `operator.demo / OperatorPass!123`
+- `administrator.demo / AdministratorPass!123`
 
-If `X-Demo-Role` is omitted, the demo host authenticates the request as `AccessViewer`.
+Those users are bootstrapped into the local persisted admin-user store on startup when they do not already exist.
+
+Use `POST /api/auth/token` with one of those accounts to get a bearer token, then send:
+
+```http
+Authorization: Bearer <access-token>
+```
+
+You can still supply `X-Correlation-Id` on API requests when you want to control audit correlation.
 
 ## Notes
 
 - This is a demo host, not the full production host.
 - The in-memory provider is intended for demonstrations only.
-- Production-grade identity integration is not implemented yet; the current host uses demo headers as the authentication source for development and demos.
+- The embedded identity provider is intended as an application-local identity source, with bootstrap users seeded into the persisted store for local and demo use.
 - To switch the same host to a real identity provider, set `Authentication:Mode = JwtBearer` and configure the `Authentication:JwtBearer` section described in [identity_provider_setup.md](d:/Research/acmp/docs/identity_provider_setup.md).

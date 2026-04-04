@@ -5,6 +5,16 @@ Accept: application/json
 
 ###
 
+POST {{MyCompany.AuthPlatform.Api_HostAddress}}/api/auth/token
+Content-Type: application/json
+
+{
+  "username": "administrator.demo",
+  "password": "AdministratorPass!123"
+}
+
+###
+
 GET {{MyCompany.AuthPlatform.Api_HostAddress}}/api/system/info
 Accept: application/json
 
@@ -12,14 +22,13 @@ Accept: application/json
 
 GET {{MyCompany.AuthPlatform.Api_HostAddress}}/api/clients
 Accept: application/json
-X-Demo-Role: AccessViewer
+Authorization: Bearer <paste-token-here>
 
 ###
 
 POST {{MyCompany.AuthPlatform.Api_HostAddress}}/api/clients
 Content-Type: application/json
-X-Demo-Role: AccessOperator
-X-Demo-Actor: demo.operator
+Authorization: Bearer <paste-token-here>
 
 {
   "clientCode": "inventory-api",
@@ -34,8 +43,7 @@ X-Demo-Actor: demo.operator
 
 POST {{MyCompany.AuthPlatform.Api_HostAddress}}/api/clients/1f4a8ec5-31f6-4df8-8b7d-6c22f4f9d0a1/credentials/hmac
 Content-Type: application/json
-X-Demo-Role: AccessOperator
-X-Demo-Actor: demo.operator
+Authorization: Bearer <paste-token-here>
 
 {
   "expiresAt": "2027-04-01T00:00:00Z",
@@ -49,8 +57,7 @@ X-Demo-Actor: demo.operator
 
 POST {{MyCompany.AuthPlatform.Api_HostAddress}}/api/credentials/bd0dd9fc-90d2-4dc8-a99e-5f5d65d8b041/rotate
 Content-Type: application/json
-X-Demo-Role: AccessAdministrator
-X-Demo-Actor: demo.admin
+Authorization: Bearer <paste-token-here>
 
 {
   "expiresAt": "2027-05-01T00:00:00Z",
@@ -63,8 +70,7 @@ X-Demo-Actor: demo.admin
 
 POST {{MyCompany.AuthPlatform.Api_HostAddress}}/api/credentials/1f8e89ef-80cf-4e56-bf58-0f8684ea7d0e/revoke
 Content-Type: application/json
-X-Demo-Role: AccessOperator
-X-Demo-Actor: demo.operator
+Authorization: Bearer <paste-token-here>
 
 {
   "reason": "Demo revocation request"

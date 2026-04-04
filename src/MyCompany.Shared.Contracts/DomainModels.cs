@@ -47,6 +47,12 @@ public enum AuditOutcome
     Failed = 3,
 }
 
+public enum AdminUserStatus
+{
+    Active = 1,
+    Disabled = 2,
+}
+
 public sealed class ServiceClient
 {
     public Guid ClientId { get; set; }
@@ -120,6 +126,32 @@ public sealed class AuditLogEntry
     public AuditOutcome? Outcome { get; set; }
     public string? CorrelationId { get; set; }
     public string? MetadataJson { get; set; }
+}
+
+public sealed class AdminUser
+{
+    public Guid UserId { get; set; }
+    public string Username { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public AdminUserStatus Status { get; set; } = AdminUserStatus.Active;
+    public byte[] PasswordHash { get; set; } = Array.Empty<byte>();
+    public byte[] PasswordSalt { get; set; } = Array.Empty<byte>();
+    public string PasswordHashAlgorithm { get; set; } = string.Empty;
+    public int PasswordIterations { get; set; }
+    public DateTimeOffset? LastLoginAt { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public string CreatedBy { get; set; } = string.Empty;
+    public DateTimeOffset UpdatedAt { get; set; }
+    public string UpdatedBy { get; set; } = string.Empty;
+    public string? ConcurrencyToken { get; set; }
+}
+
+public sealed class AdminUserRoleAssignment
+{
+    public Guid UserId { get; set; }
+    public string RoleName { get; set; } = string.Empty;
+    public DateTimeOffset CreatedAt { get; set; }
+    public string CreatedBy { get; set; } = string.Empty;
 }
 
 public sealed class OptionalNonce
