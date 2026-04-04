@@ -122,6 +122,34 @@
       }
     },
     {
+      "unique-id": "management-api-to-encrypted-credential-package",
+      "description": "Issues recipient-side encrypted credential packages to",
+      "relationship-type": {
+        "connects": {
+          "source": {
+            "node": "credential-management-api"
+          },
+          "destination": {
+            "node": "encrypted-credential-package"
+          }
+        }
+      }
+    },
+    {
+      "unique-id": "management-api-to-encrypted-client-credential-package",
+      "description": "Issues client-side encrypted credential packages to",
+      "relationship-type": {
+        "connects": {
+          "source": {
+            "node": "credential-management-api"
+          },
+          "destination": {
+            "node": "encrypted-client-credential-package"
+          }
+        }
+      }
+    },
+    {
       "unique-id": "client-service-to-protected-recipient-service",
       "description": "Sends HMAC-signed requests to",
       "relationship-type": {
@@ -190,6 +218,52 @@
           ]
         }
       }
+    }
+  ],
+  "flows": [
+    {
+      "unique-id": "issue-encrypted-credential-package-flow",
+      "name": "Issue Encrypted Credential Package",
+      "description": "Authorized administrator uses the portal and management API to issue a recipient-side encrypted credential package.",
+      "transitions": [
+        {
+          "relationship-unique-id": "administrator-uses-admin-portal",
+          "sequence-number": 1,
+          "description": "Administrator starts encrypted credential package issuance from the admin portal."
+        },
+        {
+          "relationship-unique-id": "admin-portal-to-management-api",
+          "sequence-number": 2,
+          "description": "Admin portal submits the issuance request to the credential management API."
+        },
+        {
+          "relationship-unique-id": "management-api-to-encrypted-credential-package",
+          "sequence-number": 3,
+          "description": "Credential management API issues the recipient-side encrypted credential package."
+        }
+      ]
+    },
+    {
+      "unique-id": "issue-encrypted-client-credential-package-flow",
+      "name": "Issue Encrypted Client Credential Package",
+      "description": "Authorized administrator uses the portal and management API to issue a client-side encrypted credential package.",
+      "transitions": [
+        {
+          "relationship-unique-id": "administrator-uses-admin-portal",
+          "sequence-number": 1,
+          "description": "Administrator starts encrypted client credential package issuance from the admin portal."
+        },
+        {
+          "relationship-unique-id": "admin-portal-to-management-api",
+          "sequence-number": 2,
+          "description": "Admin portal submits the client package issuance request to the credential management API."
+        },
+        {
+          "relationship-unique-id": "management-api-to-encrypted-client-credential-package",
+          "sequence-number": 3,
+          "description": "Credential management API issues the client-side encrypted credential package."
+        }
+      ]
     }
   ]
 }
