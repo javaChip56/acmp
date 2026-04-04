@@ -148,7 +148,10 @@ Suggested fields:
 - Environment
 - Scopes (for example `read`, `write`, `delete`, `admin`, or equivalent business-defined permissions)
 - ExpiresAt
+- DisabledAt
 - RevokedAt
+- ReplacedByCredentialId
+- RotationGraceEndsAt
 - CreatedAt
 - CreatedBy
 - UpdatedAt
@@ -342,6 +345,66 @@ public interface IMasterKeyProvider
 - Plaintext secret shall not be persisted.
 - Plaintext secret shall not be retrievable later.
 - Issuance response shall be the only time the secret is shown.
+
+### 8.3 Credential Lifecycle State Model
+The initial release should use the following persisted credential states:
+
+- `Active`
+- `Disabled`
+- `Revoked`
+
+`Expired` is an effective runtime condition derived from `ExpiresAt`, not a separate persisted status value.
+
+#### 8.3.1 Effective Validity Rule
+A credential is valid for authentication only when:
+
+- the parent client/service is active
+- the credential status is `Active`
+- `RevokedAt` is not set
+- `ExpiresAt` is null or later than the current UTC time
+- `RotationGraceEndsAt` is null or later than the current UTC time when the credential has been superseded by a replacement
+
+#### 8.3.2 State Transition Rules
+
+| Operation | From State | To State | Notes |
+|---|---|---|---|
+| Issue credential | none | `Active` | New credentials are active on successful issuance. |
+| Disable credential | `Active` | `Disabled` | Authentication fails while disabled. |
+| Reactivate credential | `Disabled` | `Active` | Allowed only when the credential is not revoked and not expired. |
+| Revoke credential | `Active`, `Disabled` | `Revoked` | Immediate and irreversible in the initial release. |
+| Expiry reached | `Active`, `Disabled` | no stored status change | Credential becomes operationally invalid once `ExpiresAt` is in the past. |
+| Rotate credential without grace | `Active`, `Disabled` | old credential becomes `Revoked`; new credential becomes `Active` | Rotation creates a replacement credential and revokes the previous one immediately. |
+| Rotate credential with grace | `Active`, `Disabled` | both credentials remain `Active` until grace end; old credential is then revoked or treated as no longer valid | Rotation creates a replacement credential and allows bounded overlap for client rollout. |
+
+#### 8.3.3 Expiry Semantics
+If a credential has passed `ExpiresAt`, authentication shall reject it even if the stored status is still `Active`.
+
+The initial release should not allow administrators to reactivate an expired credential by extending `ExpiresAt` after expiry has already occurred. A new credential should be issued or the existing credential should be rotated before expiry.
+
+#### 8.3.4 Rotation Semantics
+Rotation shall:
+
+1. create a new credential record with a new `CredentialId`, `KeyId`, and protected secret
+2. return the new secret once as part of the rotation result
+3. record linkage from old credential to replacement credential where supported
+4. either revoke the old credential immediately or assign a bounded `RotationGraceEndsAt` value for overlap
+5. invalidate caches associated with the old credential when immediate revocation occurs, or at grace-period completion for deferred cutover
+6. invalidate caches associated with the new credential package whenever replacement material is issued
+
+If a grace period is configured:
+
+- the replacement credential becomes valid immediately
+- the superseded credential remains valid only until `RotationGraceEndsAt`
+- the default grace period should be 7 days
+- routine grace periods should not exceed 14 days
+- the maximum permitted grace period in the initial release shall be 30 days
+- grace periods longer than 14 days should require an explicit operational reason and clear audit traceability
+- the superseded credential shall be rejected after the grace period ends even if its stored status is still `Active`
+
+If no grace period is configured, the old credential shall be revoked immediately during rotation.
+
+#### 8.3.5 Parent Client Disable Effect
+If a client/service is disabled, all of its credentials shall be treated as authentication-ineligible until the parent client/service is re-enabled.
 
 ---
 
@@ -805,11 +868,22 @@ The `secret` field is returned only during issuance and shall not be returned by
 ```json
 {
   "expiresAt": "2027-10-01T00:00:00Z",
+  "gracePeriodEndsAt": "2026-04-11T00:00:00Z",
   "issueEncryptedValidationPackage": true,
   "issueEncryptedClientPackage": true,
   "reason": "Scheduled quarterly rotation"
 }
 ```
+
+Validation notes:
+
+- `gracePeriodEndsAt` is optional
+- when supplied, `gracePeriodEndsAt` should be later than the current UTC time
+- `gracePeriodEndsAt` should be earlier than the old credential expiry time when the old credential has an expiry
+- if omitted, the platform should apply the default overlap policy of 7 days only when overlap is requested by the rotation workflow; otherwise immediate revocation applies
+- routine grace periods should not exceed 14 days
+- the maximum allowed grace-period duration in the initial release should be 30 days
+- requests exceeding 14 days should require an explicit operational reason
 
 #### 13.3.8 Revoke Credential Request
 
@@ -847,6 +921,8 @@ For browser-based admin workflows, the binary file may be returned as a download
       "status": "Active",
       "keyId": "key-uat-001",
       "keyVersion": "kms-v1",
+      "replacedByCredentialId": "cred-2002",
+      "rotationGraceEndsAt": "2026-04-11T00:00:00Z",
       "scopes": [
         "orders.read",
         "orders.write"
@@ -918,7 +994,11 @@ Recommended initial error codes:
 | 404 | `credential_not_found` | Requested credential does not exist. |
 | 409 | `client_code_conflict` | A client with the same code already exists in the target environment. |
 | 409 | `credential_state_conflict` | Requested lifecycle operation is not valid for the current credential state. |
+| 409 | `credential_already_revoked` | Requested operation cannot be completed because the credential is already revoked. |
+| 409 | `credential_already_disabled` | Requested disable operation targets an already disabled credential. |
+| 409 | `credential_expired_cannot_activate` | Requested activation or update would attempt to reactivate an already expired credential. |
 | 409 | `key_id_conflict` | Generated or supplied `KeyId` conflicts with an existing credential. |
+| 422 | `rotation_grace_period_invalid` | Requested grace period violates ordering or policy rules. |
 | 422 | `unsupported_authentication_mode` | Requested authentication mode is not enabled in the current release. |
 | 422 | `unsupported_hmac_algorithm` | Requested HMAC algorithm is not supported. |
 | 422 | `credential_expiry_invalid` | Credential expiry value violates policy. |
@@ -1021,14 +1101,22 @@ Cover:
 - issue encrypted client credential package file for `KeyId`
 - authenticate valid request
 - reject invalid signature
+- reject disabled credential
 - reject revoked credential
 - reject expired credential
+- reject requests for a disabled client/service
 - validate request successfully in `KmsBacked` mode
 - validate request successfully in `EncryptedFile` mode
 - sign outbound request successfully using client package mode
 - preload configured active credentials at startup
 - lazy load credentials that are not preloaded
+- reactivate disabled credential successfully before expiry
+- reject reactivation of revoked credential
+- reject reactivation of expired credential
 - cache invalidation on revoke and rotate
+- rotate credential with no grace period and reject the old credential immediately
+- rotate credential with grace period and accept both credentials until grace-period expiry
+- reject the superseded credential after grace-period expiry
 - reload encrypted credential package file after replacement
 - reload encrypted client credential package file after replacement
 - reject tampered encrypted credential package file

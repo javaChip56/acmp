@@ -99,6 +99,61 @@ The system shall allow a credential to have an expiry date and shall reject expi
 ### FRS-3.2.7 List Credential Metadata
 The system shall allow authorized users to list credential metadata without exposing plaintext secrets.
 
+### FRS-3.2.8 Credential Status Model
+The system shall maintain a credential status model with the following stored states:
+
+- `Active`
+- `Disabled`
+- `Revoked`
+
+Credential expiry shall be represented by `ExpiresAt` and enforced as an operational validity rule rather than as a separate persisted lifecycle status.
+
+### FRS-3.2.9 Effective Validity Rules
+A credential shall be accepted for authentication only when all of the following are true:
+
+- the parent client/service is active
+- the credential status is `Active`
+- the credential is not revoked
+- the credential is not expired
+
+If any of these conditions are not met, authentication shall fail securely.
+
+### FRS-3.2.10 Disable and Reactivate Rules
+Disabling a credential shall place it in the `Disabled` state and authentication shall be rejected while the credential remains disabled.
+
+A disabled credential may be returned to `Active` only if it has not been revoked and has not already expired.
+
+### FRS-3.2.11 Revoke Rules
+Revocation shall place the credential in the `Revoked` state immediately.
+
+Revocation shall be irreversible in the initial release, and revoked credentials shall never return to an authenticated state.
+
+### FRS-3.2.12 Expiry Rules
+If the current time is later than `ExpiresAt`, the credential shall be treated as expired and rejected during authentication even if its stored status remains `Active` or `Disabled`.
+
+The initial release shall not reactivate an already expired credential by editing `ExpiresAt`; a new credential shall be issued or rotated instead.
+
+### FRS-3.2.13 Rotation Rules
+Credential rotation shall issue a new replacement credential.
+
+The initial release shall support an optional bounded grace-period overlap during rotation so that the prior credential may remain temporarily valid while dependent clients transition to the new credential package.
+
+If a grace period is configured for rotation:
+
+- the new credential shall become valid immediately
+- the prior credential may remain valid only until the configured grace-period end time
+- the prior credential shall be rejected after the grace period ends
+- the system shall record that the prior credential has been superseded by the replacement credential
+- the default grace period should be 7 days
+- routine grace periods should not exceed 14 days
+- the maximum permitted grace period in the initial release shall be 30 days
+- grace periods longer than 14 days shall require an explicit operational reason and audit traceability
+
+If no grace period is configured, the prior credential shall be revoked immediately as part of the rotation operation.
+
+### FRS-3.2.14 Parent Client Disable Effect
+If a client/service is disabled, all credentials belonging to that client/service shall be rejected for authentication regardless of individual credential status.
+
 ---
 
 ## 3.3 Authentication Mode Management
