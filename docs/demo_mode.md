@@ -31,6 +31,12 @@ The current default configuration uses:
 - `GET /health`
 - `POST /api/auth/token`
 - `GET /api/system/info`
+- `GET /api/admin/users`
+- `GET /api/admin/users/{userId}`
+- `POST /api/admin/users`
+- `POST /api/admin/users/{userId}/disable`
+- `POST /api/admin/users/{userId}/reset-password`
+- `PUT /api/admin/users/{userId}/roles`
 - `GET /api/clients`
 - `GET /api/clients/{clientId}`
 - `GET /api/clients/{clientId}/credentials`
@@ -48,6 +54,8 @@ The current default configuration uses:
 - `administrator.demo / AdministratorPass!123`
 
 Those users are bootstrapped into the local persisted admin-user store on startup when they do not already exist.
+
+Administrative user passwords in demo mode still follow the application password policy, which currently requires a minimum length of 12 characters.
 
 Use `POST /api/auth/token` with one of those accounts to get a bearer token, then send:
 

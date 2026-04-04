@@ -50,6 +50,16 @@ public sealed record AuditLogSummary(
     string? CorrelationId,
     string? MetadataJson);
 
+public sealed record AdminUserSummary(
+    Guid UserId,
+    string Username,
+    string DisplayName,
+    AdminUserStatus Status,
+    DateTimeOffset? LastLoginAt,
+    IReadOnlyList<string> Roles,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);
+
 public sealed record CreateServiceClientRequest(
     string ClientCode,
     string ClientName,
@@ -57,6 +67,23 @@ public sealed record CreateServiceClientRequest(
     DeploymentEnvironment Environment,
     string? Description,
     string? MetadataJson);
+
+public sealed record CreateAdminUserRequest(
+    string Username,
+    string DisplayName,
+    string Password,
+    IReadOnlyList<string> Roles);
+
+public sealed record DisableAdminUserRequest(
+    string? Reason);
+
+public sealed record ResetAdminUserPasswordRequest(
+    string NewPassword,
+    string? Reason);
+
+public sealed record AssignAdminUserRolesRequest(
+    IReadOnlyList<string> Roles,
+    string? Reason);
 
 public sealed record IssueHmacCredentialRequest(
     DateTimeOffset ExpiresAt,

@@ -208,6 +208,77 @@ app.MapGet("/api/system/info", (
 .WithName("GetSystemInfo")
 .WithOpenApi();
 
+app.MapGet("/api/admin/users", (
+    HttpContext httpContext,
+    AuthPlatformApplicationService service,
+    CancellationToken cancellationToken) =>
+    ApiExecution.ExecuteAsync(httpContext, async accessContext =>
+        Results.Ok(await service.ListAdminUsersAsync(accessContext, cancellationToken))))
+.WithName("ListAdminUsers")
+.RequireAuthorization(AdminAccessPolicies.Administrator)
+.WithOpenApi();
+
+app.MapGet("/api/admin/users/{userId:guid}", (
+    Guid userId,
+    HttpContext httpContext,
+    AuthPlatformApplicationService service,
+    CancellationToken cancellationToken) =>
+    ApiExecution.ExecuteAsync(httpContext, async accessContext =>
+        Results.Ok(await service.GetAdminUserAsync(userId, accessContext, cancellationToken))))
+.WithName("GetAdminUser")
+.RequireAuthorization(AdminAccessPolicies.Administrator)
+.WithOpenApi();
+
+app.MapPost("/api/admin/users", (
+    CreateAdminUserRequest request,
+    HttpContext httpContext,
+    AuthPlatformApplicationService service,
+    CancellationToken cancellationToken) =>
+    ApiExecution.ExecuteAsync(httpContext, async accessContext =>
+    {
+        var user = await service.CreateAdminUserAsync(request, accessContext, cancellationToken);
+        return Results.Created($"/api/admin/users/{user.UserId}", user);
+    }))
+.WithName("CreateAdminUser")
+.RequireAuthorization(AdminAccessPolicies.Administrator)
+.WithOpenApi();
+
+app.MapPost("/api/admin/users/{userId:guid}/disable", (
+    Guid userId,
+    DisableAdminUserRequest request,
+    HttpContext httpContext,
+    AuthPlatformApplicationService service,
+    CancellationToken cancellationToken) =>
+    ApiExecution.ExecuteAsync(httpContext, async accessContext =>
+        Results.Ok(await service.DisableAdminUserAsync(userId, request, accessContext, cancellationToken))))
+.WithName("DisableAdminUser")
+.RequireAuthorization(AdminAccessPolicies.Administrator)
+.WithOpenApi();
+
+app.MapPost("/api/admin/users/{userId:guid}/reset-password", (
+    Guid userId,
+    ResetAdminUserPasswordRequest request,
+    HttpContext httpContext,
+    AuthPlatformApplicationService service,
+    CancellationToken cancellationToken) =>
+    ApiExecution.ExecuteAsync(httpContext, async accessContext =>
+        Results.Ok(await service.ResetAdminUserPasswordAsync(userId, request, accessContext, cancellationToken))))
+.WithName("ResetAdminUserPassword")
+.RequireAuthorization(AdminAccessPolicies.Administrator)
+.WithOpenApi();
+
+app.MapPut("/api/admin/users/{userId:guid}/roles", (
+    Guid userId,
+    AssignAdminUserRolesRequest request,
+    HttpContext httpContext,
+    AuthPlatformApplicationService service,
+    CancellationToken cancellationToken) =>
+    ApiExecution.ExecuteAsync(httpContext, async accessContext =>
+        Results.Ok(await service.AssignAdminUserRolesAsync(userId, request, accessContext, cancellationToken))))
+.WithName("AssignAdminUserRoles")
+.RequireAuthorization(AdminAccessPolicies.Administrator)
+.WithOpenApi();
+
 app.MapGet("/api/clients", (
     HttpContext httpContext,
     AuthPlatformApplicationService service,

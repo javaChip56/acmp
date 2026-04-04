@@ -1149,6 +1149,13 @@ Recommended initial conventions:
 ### 13.2 Management APIs
 Suggested initial endpoints:
 
+- POST /api/auth/token
+- GET /api/admin/users
+- GET /api/admin/users/{userId}
+- POST /api/admin/users
+- POST /api/admin/users/{userId}/disable
+- POST /api/admin/users/{userId}/reset-password
+- PUT /api/admin/users/{userId}/roles
 - POST /api/clients
 - PUT /api/clients/{clientId}
 - POST /api/clients/{clientId}/disable
@@ -1164,7 +1171,115 @@ Suggested initial endpoints:
 
 ### 13.3 Example DTOs
 
-#### 13.3.1 Create Client Request
+#### 13.3.1 Administrative Token Request
+
+```json
+{
+  "username": "administrator.demo",
+  "password": "AdministratorPass!123"
+}
+```
+
+#### 13.3.2 Administrative Token Response
+
+```json
+{
+  "accessToken": "eyJhbGciOi...",
+  "tokenType": "Bearer",
+  "expiresAt": "2026-04-04T12:00:00Z",
+  "username": "administrator.demo",
+  "displayName": "Demo Administrator",
+  "roles": [
+    "AccessAdministrator"
+  ]
+}
+```
+
+#### 13.3.3 Create Administrative User Request
+
+```json
+{
+  "username": "auditor.demo",
+  "displayName": "Demo Auditor",
+  "password": "AuditorPass!123",
+  "roles": [
+    "AccessViewer"
+  ]
+}
+```
+
+Validation notes:
+
+- `username` should be unique across persisted administrative users
+- `password` should satisfy the configured password policy
+- `roles` should contain one or more supported administrative roles
+
+#### 13.3.4 Administrative User Response
+
+```json
+{
+  "userId": "u-1001",
+  "username": "auditor.demo",
+  "displayName": "Demo Auditor",
+  "status": "Active",
+  "lastLoginAt": null,
+  "roles": [
+    "AccessViewer"
+  ],
+  "createdAt": "2026-04-04T11:00:00Z",
+  "updatedAt": "2026-04-04T11:00:00Z"
+}
+```
+
+#### 13.3.5 Administrative User List Response
+
+```json
+[
+  {
+    "userId": "u-1001",
+    "username": "auditor.demo",
+    "displayName": "Demo Auditor",
+    "status": "Active",
+    "lastLoginAt": null,
+    "roles": [
+      "AccessViewer"
+    ],
+    "createdAt": "2026-04-04T11:00:00Z",
+    "updatedAt": "2026-04-04T11:00:00Z"
+  }
+]
+```
+
+#### 13.3.6 Disable Administrative User Request
+
+```json
+{
+  "reason": "Demo access no longer required"
+}
+```
+
+#### 13.3.7 Reset Administrative User Password Request
+
+```json
+{
+  "newPassword": "UpdatedPass!123",
+  "reason": "Temporary credential reset during onboarding"
+}
+```
+
+#### 13.3.8 Assign Administrative User Roles Request
+
+```json
+{
+  "roles": [
+    "AccessViewer",
+    "AccessOperator"
+  ],
+  "reason": "Expanded platform support duties"
+}
+```
+
+#### 13.3.9 Create Client Request
 
 ```json
 {
@@ -1186,7 +1301,7 @@ Validation notes:
 - `environment` should be one of `DEV`, `TEST`, `UAT`, or `PROD`
 - `owner` should capture the accountable support team or function
 
-#### 13.3.2 Create Client Response
+#### 13.3.8 Create Client Response
 
 ```json
 {
@@ -1206,7 +1321,7 @@ Validation notes:
 }
 ```
 
-#### 13.3.3 Update Client Request
+#### 13.3.9 Update Client Request
 
 ```json
 {
@@ -1220,7 +1335,7 @@ Validation notes:
 }
 ```
 
-#### 13.3.4 Issue HMAC Credential Request
+#### 13.3.10 Issue HMAC Credential Request
 
 ```json
 {
@@ -1242,7 +1357,7 @@ Validation notes:
 - `expiresAt` should be in the future when supplied
 - `hmacAlgorithm` should initially allow only `HMACSHA256`
 
-#### 13.3.5 Issue HMAC Credential Response
+#### 13.3.11 Issue HMAC Credential Response
 
 ```json
 {
@@ -1265,7 +1380,7 @@ Validation notes:
 
 The `secret` field is returned only during issuance and shall not be returned by later read or list operations.
 
-#### 13.3.6 Update Credential Request
+#### 13.3.12 Update Credential Request
 
 ```json
 {
@@ -1278,7 +1393,7 @@ The `secret` field is returned only during issuance and shall not be returned by
 }
 ```
 
-#### 13.3.7 Rotate Credential Request
+#### 13.3.13 Rotate Credential Request
 
 ```json
 {
@@ -1300,7 +1415,7 @@ Validation notes:
 - the maximum allowed grace-period duration in the initial release should be 30 days
 - requests exceeding 14 days should require an explicit operational reason
 
-#### 13.3.8 Revoke Credential Request
+#### 13.3.14 Revoke Credential Request
 
 ```json
 {
@@ -1308,7 +1423,7 @@ Validation notes:
 }
 ```
 
-#### 13.3.9 Encrypted Package Issuance Response
+#### 13.3.15 Encrypted Package Issuance Response
 
 ```json
 {
@@ -1324,7 +1439,7 @@ Validation notes:
 
 For browser-based admin workflows, the binary file may be returned as a download stream with metadata reflected in response headers.
 
-#### 13.3.10 Credential Metadata List Response
+#### 13.3.16 Credential Metadata List Response
 
 ```json
 {
@@ -1401,14 +1516,22 @@ Recommended initial error codes:
 | HTTP Status | Error Code | Meaning |
 |---|---|---|
 | 400 | `invalid_request` | Request payload or parameters are malformed. |
+| 400 | `validation_error` | Required authentication or administrative input is missing. |
 | 400 | `invalid_timestamp_format` | Timestamp value does not match the required UTC format. |
 | 400 | `invalid_scope_assignment` | Scope list is empty, duplicated, or contains unsupported values. |
+| 400 | `invalid_admin_role_assignment` | Administrative role list is empty or contains unsupported values. |
+| 400 | `password_policy_invalid` | Administrative password does not satisfy the configured password policy. |
 | 401 | `admin_authentication_required` | Caller is not authenticated to use the management API. |
+| 401 | `invalid_credentials` | Administrative username or password is invalid. |
 | 403 | `admin_access_denied` | Caller is authenticated but lacks required administrative permission. |
 | 403 | `audit_access_denied` | Caller is authenticated but is not permitted to view audit data. |
 | 403 | `extended_grace_period_not_allowed` | Caller is authenticated but is not permitted to request a grace period longer than 14 days. |
+| 403 | `forbidden` | Administrative identity is authenticated but has no usable assigned roles. |
+| 404 | `admin_user_not_found` | Requested administrative user does not exist. |
 | 404 | `client_not_found` | Requested client record does not exist. |
 | 404 | `credential_not_found` | Requested credential does not exist. |
+| 409 | `admin_username_conflict` | An administrative user with the same username already exists. |
+| 409 | `admin_user_already_disabled` | Requested disable operation targets an already disabled administrative user. |
 | 409 | `client_code_conflict` | A client with the same code already exists in the target environment. |
 | 409 | `credential_state_conflict` | Requested lifecycle operation is not valid for the current credential state. |
 | 409 | `credential_already_revoked` | Requested operation cannot be completed because the credential is already revoked. |
@@ -1461,9 +1584,11 @@ All admin and API endpoints shall use HTTPS.
 The administration portal shall enforce authenticated access and role-based authorization.
 
 #### 14.3.1 Administrative Identity Requirement
-The administration portal and management API should rely on authenticated internal enterprise identities.
+The administration portal and management API should rely on authenticated internal administrative identities.
 
-Role assignment should be resolved from the enterprise identity source, such as internal directory groups, claims, or equivalent centrally managed authorization data.
+The initial release may satisfy this either through an embedded identity provider backed by persisted administrative users or through an external JWT bearer identity provider when one is available.
+
+In embedded mode, administrative authentication should issue bearer tokens from `POST /api/auth/token` against the persisted `AdminUser` and `AdminUserRoleAssignment` records.
 
 #### 14.3.2 Administrative Roles
 The initial release should implement the following administrative roles:
@@ -1488,11 +1613,27 @@ The initial release should implement the following administrative roles:
 | Configure grace period from 7 to 14 days | No | Yes | Yes |
 | Configure grace period longer than 14 days up to 30 days | No | No | Yes |
 | View audit data | No | No | Yes |
+| List and view administrative users | No | No | Yes |
+| Create administrative users | No | No | Yes |
+| Disable administrative users | No | No | Yes |
+| Reset administrative passwords | No | No | Yes |
+| Assign or replace administrative roles | No | No | Yes |
 
 #### 14.3.4 Endpoint Authorization Direction
 Recommended initial endpoint authorization:
 
+- `POST /api/auth/token`: anonymous caller in embedded-identity mode only
+- `GET /api/admin/users`: `AccessAdministrator` only
+- `GET /api/admin/users/{userId}`: `AccessAdministrator` only
+- `POST /api/admin/users`: `AccessAdministrator` only
+- `POST /api/admin/users/{userId}/disable`: `AccessAdministrator` only
+- `POST /api/admin/users/{userId}/reset-password`: `AccessAdministrator` only
+- `PUT /api/admin/users/{userId}/roles`: `AccessAdministrator` only
+- `GET /api/clients`: `AccessViewer`, `AccessOperator`, or `AccessAdministrator`
+- `GET /api/clients/{clientId}`: `AccessViewer`, `AccessOperator`, or `AccessAdministrator`
 - `GET /api/clients/{clientId}/credentials`: `AccessViewer`, `AccessOperator`, or `AccessAdministrator`
+- `GET /api/credentials/{credentialId}`: `AccessViewer`, `AccessOperator`, or `AccessAdministrator`
+- `POST /api/clients`: `AccessOperator` or `AccessAdministrator`
 - `POST /api/clients/{clientId}/credentials/hmac`: `AccessOperator` or `AccessAdministrator`
 - `PUT /api/credentials/{credentialId}`: `AccessOperator` or `AccessAdministrator`
 - `POST /api/credentials/{credentialId}/disable`: `AccessOperator` or `AccessAdministrator`
@@ -1590,6 +1731,12 @@ Cover:
 - allow grace periods longer than 14 days up to 30 days for `AccessAdministrator`
 - reject audit access for non-administrative roles
 - allow audit access for `AccessAdministrator`
+- authenticate persisted administrative user and issue token
+- create administrative user and persist assigned roles
+- reject duplicate administrative username
+- reset administrative user password and invalidate old password
+- disable administrative user and reject subsequent login
+- replace administrative role assignments successfully
 - reject the superseded credential after grace-period expiry
 - reject package with unsupported schema version
 - reject package bound to the wrong certificate protection context

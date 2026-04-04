@@ -1,8 +1,8 @@
 using System.Security.Cryptography;
 
-namespace MyCompany.AuthPlatform.Api;
+namespace MyCompany.AuthPlatform.Application;
 
-internal static class EmbeddedIdentityPasswordHasher
+public static class AdminUserPasswordHasher
 {
     public const string Algorithm = "PBKDF2-SHA256";
     public const int DefaultIterations = 100_000;

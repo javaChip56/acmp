@@ -533,6 +533,8 @@ The administration portal shall be compatible with a restrictive Content Securit
 ### FRS-3.11.6 Authenticated Administrative Access
 The administration portal and management API shall require authenticated internal administrative users.
 
+The initial release shall include an application-managed administrative identity capability so the platform can authenticate administrative users without requiring an external identity provider.
+
 ### FRS-3.11.7 Administrative Role Model
 The initial release shall support the following administrative roles:
 
@@ -565,11 +567,45 @@ The initial release shall support the following administrative roles:
 
 - configure extended rotation grace periods longer than 14 days up to the platform maximum of 30 days
 - view audit data
+- list and view persisted administrative users
+- create, disable, reset passwords for, and assign roles to persisted administrative users
 
 ### FRS-3.11.11 Extended Grace-Period Approval Rule
 In the initial release, a requested rotation grace period longer than 14 days shall require `AccessAdministrator` authorization and an explicit operational reason.
 
 Because maker-checker workflow is out of scope for the initial release, the `AccessAdministrator` authorization check shall act as the approval for extended grace periods rather than a separate approval workflow.
+
+### FRS-3.11.12 Persisted Administrative User Store
+The system shall maintain persisted administrative user records and role assignments rather than relying only on static configuration at runtime.
+
+Administrative user records shall include username, display name, status, password hash metadata, and assigned administrative roles.
+
+### FRS-3.11.13 Administrative User Listing
+The system shall allow `AccessAdministrator` users to list and view persisted administrative users and their assigned roles.
+
+### FRS-3.11.14 Administrative User Creation
+The system shall allow `AccessAdministrator` users to create new persisted administrative users and assign one or more supported administrative roles.
+
+Created administrative users shall authenticate through the application-managed administrative identity capability once persisted.
+
+### FRS-3.11.15 Administrative User Disablement
+The system shall allow `AccessAdministrator` users to disable persisted administrative users so they can no longer authenticate to the administration portal or management API.
+
+### FRS-3.11.16 Administrative Password Reset
+The system shall allow `AccessAdministrator` users to reset the password of a persisted administrative user.
+
+Passwords shall be stored only as derived hash material and shall never be stored or logged in plaintext.
+
+Reset passwords shall satisfy the platform password policy before they are accepted.
+
+### FRS-3.11.17 Administrative Role Assignment
+The system shall allow `AccessAdministrator` users to assign or replace the supported administrative roles of a persisted administrative user.
+
+### FRS-3.11.18 Administrative Password Policy
+Administrative passwords shall have a minimum length of 12 characters in the initial release.
+
+### FRS-3.11.19 Administrative User Auditability
+Administrative user creation, disablement, password reset, and role assignment changes shall be captured in audit records with actor, target user, timestamp, and reason when supplied.
 
 ---
 

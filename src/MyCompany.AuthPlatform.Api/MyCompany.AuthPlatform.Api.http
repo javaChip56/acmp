@@ -1,4 +1,5 @@
 @MyCompany.AuthPlatform.Api_HostAddress = http://localhost:5280
+@adminUserId = 00000000-0000-0000-0000-000000000000
 
 GET {{MyCompany.AuthPlatform.Api_HostAddress}}/health
 Accept: application/json
@@ -11,6 +12,68 @@ Content-Type: application/json
 {
   "username": "administrator.demo",
   "password": "AdministratorPass!123"
+}
+
+###
+
+GET {{MyCompany.AuthPlatform.Api_HostAddress}}/api/admin/users
+Accept: application/json
+Authorization: Bearer <paste-token-here>
+
+###
+
+GET {{MyCompany.AuthPlatform.Api_HostAddress}}/api/admin/users/{{adminUserId}}
+Accept: application/json
+Authorization: Bearer <paste-token-here>
+
+###
+
+POST {{MyCompany.AuthPlatform.Api_HostAddress}}/api/admin/users
+Content-Type: application/json
+Authorization: Bearer <paste-token-here>
+
+{
+  "username": "auditor.demo",
+  "displayName": "Demo Auditor",
+  "password": "AuditorPass!123",
+  "roles": [
+    "AccessViewer"
+  ]
+}
+
+###
+
+POST {{MyCompany.AuthPlatform.Api_HostAddress}}/api/admin/users/{{adminUserId}}/disable
+Content-Type: application/json
+Authorization: Bearer <paste-token-here>
+
+{
+  "reason": "Demo disable request"
+}
+
+###
+
+POST {{MyCompany.AuthPlatform.Api_HostAddress}}/api/admin/users/{{adminUserId}}/reset-password
+Content-Type: application/json
+Authorization: Bearer <paste-token-here>
+
+{
+  "newPassword": "UpdatedPass!123",
+  "reason": "Demo password reset"
+}
+
+###
+
+PUT {{MyCompany.AuthPlatform.Api_HostAddress}}/api/admin/users/{{adminUserId}}/roles
+Content-Type: application/json
+Authorization: Bearer <paste-token-here>
+
+{
+  "roles": [
+    "AccessViewer",
+    "AccessOperator"
+  ],
+  "reason": "Demo role update"
 }
 
 ###

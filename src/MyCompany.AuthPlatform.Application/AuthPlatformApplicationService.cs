@@ -8,9 +8,11 @@ public sealed class AuthPlatformApplicationService
 {
     private const int DefaultPageSize = 100;
     private const int DefaultAuditPageSize = 200;
+    private const int DefaultAdminUserPageSize = 100;
     private const int RoutineGracePeriodLimitDays = 14;
     private const int ExtendedGracePeriodLimitDays = 30;
     private const int MinimumOperatorGracePeriodDays = 7;
+    private const int MinimumPasswordLength = 12;
     private const string DefaultKeyVersion = "kms-v1";
 
     private readonly IAuthPlatformUnitOfWork _unitOfWork;
@@ -112,6 +114,38 @@ public sealed class AuthPlatformApplicationService
             .ToArray();
     }
 
+    public async Task<IReadOnlyList<AdminUserSummary>> ListAdminUsersAsync(
+        AdminAccessContext accessContext,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureMinimumRole(accessContext, AdminAccessRole.AccessAdministrator, "admin_access_denied");
+
+        var users = await _unitOfWork.AdminUsers.ListAsync(
+            new ListAdminUsersRequest { Take = DefaultAdminUserPageSize },
+            cancellationToken);
+
+        var items = new List<AdminUserSummary>(users.Items.Count);
+        foreach (var user in users.Items)
+        {
+            items.Add(await BuildAdminUserSummaryAsync(user, cancellationToken));
+        }
+
+        return items;
+    }
+
+    public async Task<AdminUserSummary> GetAdminUserAsync(
+        Guid userId,
+        AdminAccessContext accessContext,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureMinimumRole(accessContext, AdminAccessRole.AccessAdministrator, "admin_access_denied");
+
+        var user = await _unitOfWork.AdminUsers.GetByIdAsync(userId, cancellationToken)
+            ?? throw new ApplicationServiceException(404, "admin_user_not_found", "The specified administrative user could not be found.");
+
+        return await BuildAdminUserSummaryAsync(user, cancellationToken);
+    }
+
     public async Task<ServiceClientSummary> CreateServiceClientAsync(
         CreateServiceClientRequest request,
         AdminAccessContext accessContext,
@@ -165,6 +199,65 @@ public sealed class AuthPlatformApplicationService
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return MapServiceClient(client);
+    }
+
+    public async Task<AdminUserSummary> CreateAdminUserAsync(
+        CreateAdminUserRequest request,
+        AdminAccessContext accessContext,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureMinimumRole(accessContext, AdminAccessRole.AccessAdministrator, "admin_access_denied");
+
+        var username = RequireText(request.Username, "username");
+        var displayName = RequireText(request.DisplayName, "displayName");
+        var password = ValidatePassword(request.Password);
+        var roles = NormalizeAdminRoles(request.Roles);
+
+        var existing = await _unitOfWork.AdminUsers.GetByUsernameAsync(username, cancellationToken);
+        if (existing is not null)
+        {
+            throw new ApplicationServiceException(409, "admin_username_conflict", "An administrative user with the same username already exists.");
+        }
+
+        var passwordMaterial = AdminUserPasswordHasher.HashPassword(password);
+        var now = DateTimeOffset.UtcNow;
+        var user = new AdminUser
+        {
+            UserId = Guid.NewGuid(),
+            Username = username,
+            DisplayName = displayName,
+            Status = AdminUserStatus.Active,
+            PasswordHash = passwordMaterial.Hash,
+            PasswordSalt = passwordMaterial.Salt,
+            PasswordHashAlgorithm = AdminUserPasswordHasher.Algorithm,
+            PasswordIterations = passwordMaterial.Iterations,
+            CreatedAt = now,
+            CreatedBy = accessContext.Actor,
+            UpdatedAt = now,
+            UpdatedBy = accessContext.Actor,
+            ConcurrencyToken = Guid.NewGuid().ToString("N"),
+        };
+
+        await _unitOfWork.AdminUsers.AddAsync(user, cancellationToken);
+        await ReplaceAdminUserRolesAsync(user.UserId, roles, accessContext, now, cancellationToken);
+        await AppendAuditLogAsync(
+            accessContext,
+            "AdminUserCreated",
+            "AdminUser",
+            user.UserId.ToString(),
+            environment: null,
+            reason: "Administrative user created.",
+            outcome: AuditOutcome.Succeeded,
+            metadata: new
+            {
+                role = accessContext.Role.ToString(),
+                username = user.Username,
+                assignedRoles = roles,
+            },
+            cancellationToken);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return await BuildAdminUserSummaryAsync(user, cancellationToken);
     }
 
     public async Task<CredentialSummary> IssueHmacCredentialAsync(
@@ -399,6 +492,131 @@ public sealed class AuthPlatformApplicationService
         return await BuildCredentialSummaryAsync(credential, cancellationToken);
     }
 
+    public async Task<AdminUserSummary> DisableAdminUserAsync(
+        Guid userId,
+        DisableAdminUserRequest request,
+        AdminAccessContext accessContext,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureMinimumRole(accessContext, AdminAccessRole.AccessAdministrator, "admin_access_denied");
+
+        var user = await _unitOfWork.AdminUsers.GetByIdAsync(userId, cancellationToken)
+            ?? throw new ApplicationServiceException(404, "admin_user_not_found", "The specified administrative user could not be found.");
+
+        if (user.Status == AdminUserStatus.Disabled)
+        {
+            throw new ApplicationServiceException(409, "admin_user_already_disabled", "The specified administrative user is already disabled.");
+        }
+
+        var reason = NormalizeOptionalText(request.Reason) ?? "Administrative user disabled.";
+        var now = DateTimeOffset.UtcNow;
+        user.Status = AdminUserStatus.Disabled;
+        user.UpdatedAt = now;
+        user.UpdatedBy = accessContext.Actor;
+
+        await _unitOfWork.AdminUsers.UpdateAsync(user, cancellationToken);
+        await AppendAuditLogAsync(
+            accessContext,
+            "AdminUserDisabled",
+            "AdminUser",
+            user.UserId.ToString(),
+            environment: null,
+            reason,
+            outcome: AuditOutcome.Succeeded,
+            metadata: new
+            {
+                role = accessContext.Role.ToString(),
+                username = user.Username,
+            },
+            cancellationToken);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return await BuildAdminUserSummaryAsync(user, cancellationToken);
+    }
+
+    public async Task<AdminUserSummary> ResetAdminUserPasswordAsync(
+        Guid userId,
+        ResetAdminUserPasswordRequest request,
+        AdminAccessContext accessContext,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureMinimumRole(accessContext, AdminAccessRole.AccessAdministrator, "admin_access_denied");
+
+        var user = await _unitOfWork.AdminUsers.GetByIdAsync(userId, cancellationToken)
+            ?? throw new ApplicationServiceException(404, "admin_user_not_found", "The specified administrative user could not be found.");
+
+        var newPassword = ValidatePassword(request.NewPassword);
+        var passwordMaterial = AdminUserPasswordHasher.HashPassword(newPassword);
+        var reason = NormalizeOptionalText(request.Reason) ?? "Administrative user password reset.";
+        var now = DateTimeOffset.UtcNow;
+
+        user.PasswordHash = passwordMaterial.Hash;
+        user.PasswordSalt = passwordMaterial.Salt;
+        user.PasswordHashAlgorithm = AdminUserPasswordHasher.Algorithm;
+        user.PasswordIterations = passwordMaterial.Iterations;
+        user.UpdatedAt = now;
+        user.UpdatedBy = accessContext.Actor;
+
+        await _unitOfWork.AdminUsers.UpdateAsync(user, cancellationToken);
+        await AppendAuditLogAsync(
+            accessContext,
+            "AdminUserPasswordReset",
+            "AdminUser",
+            user.UserId.ToString(),
+            environment: null,
+            reason,
+            outcome: AuditOutcome.Succeeded,
+            metadata: new
+            {
+                role = accessContext.Role.ToString(),
+                username = user.Username,
+            },
+            cancellationToken);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return await BuildAdminUserSummaryAsync(user, cancellationToken);
+    }
+
+    public async Task<AdminUserSummary> AssignAdminUserRolesAsync(
+        Guid userId,
+        AssignAdminUserRolesRequest request,
+        AdminAccessContext accessContext,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureMinimumRole(accessContext, AdminAccessRole.AccessAdministrator, "admin_access_denied");
+
+        var user = await _unitOfWork.AdminUsers.GetByIdAsync(userId, cancellationToken)
+            ?? throw new ApplicationServiceException(404, "admin_user_not_found", "The specified administrative user could not be found.");
+
+        var roles = NormalizeAdminRoles(request.Roles);
+        var reason = NormalizeOptionalText(request.Reason) ?? "Administrative user roles updated.";
+        var now = DateTimeOffset.UtcNow;
+
+        user.UpdatedAt = now;
+        user.UpdatedBy = accessContext.Actor;
+
+        await _unitOfWork.AdminUsers.UpdateAsync(user, cancellationToken);
+        await ReplaceAdminUserRolesAsync(user.UserId, roles, accessContext, now, cancellationToken);
+        await AppendAuditLogAsync(
+            accessContext,
+            "AdminUserRolesUpdated",
+            "AdminUser",
+            user.UserId.ToString(),
+            environment: null,
+            reason,
+            outcome: AuditOutcome.Succeeded,
+            metadata: new
+            {
+                role = accessContext.Role.ToString(),
+                username = user.Username,
+                assignedRoles = roles,
+            },
+            cancellationToken);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return await BuildAdminUserSummaryAsync(user, cancellationToken);
+    }
+
     private static void EnsureMinimumRole(
         AdminAccessContext accessContext,
         AdminAccessRole requiredRole,
@@ -467,6 +685,17 @@ public sealed class AuthPlatformApplicationService
         return gracePeriodEndsAt;
     }
 
+    private static string ValidatePassword(string? password)
+    {
+        var normalized = RequireText(password, "password");
+        if (normalized.Length < MinimumPasswordLength)
+        {
+            throw new ApplicationServiceException(400, "password_policy_invalid", $"Passwords must be at least {MinimumPasswordLength} characters long.");
+        }
+
+        return normalized;
+    }
+
     private static string RequireText(string? value, string fieldName)
     {
         var normalized = NormalizeOptionalText(value);
@@ -501,6 +730,32 @@ public sealed class AuthPlatformApplicationService
         return normalized;
     }
 
+    private static IReadOnlyList<string> NormalizeAdminRoles(IEnumerable<string>? roles)
+    {
+        var normalized = (roles ?? Array.Empty<string>())
+            .Select(role => role?.Trim())
+            .Where(role => !string.IsNullOrWhiteSpace(role))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(role => role, StringComparer.Ordinal)
+            .Cast<string>()
+            .ToArray();
+
+        if (normalized.Length == 0)
+        {
+            throw new ApplicationServiceException(400, "invalid_admin_role_assignment", "At least one administrative role assignment is required.");
+        }
+
+        foreach (var role in normalized)
+        {
+            if (!Enum.TryParse<AdminAccessRole>(role, ignoreCase: false, out _))
+            {
+                throw new ApplicationServiceException(400, "invalid_admin_role_assignment", $"'{role}' is not a supported administrative role.");
+            }
+        }
+
+        return normalized;
+    }
+
     private async Task<CredentialSummary> BuildCredentialSummaryAsync(
         Credential credential,
         CancellationToken cancellationToken)
@@ -527,6 +782,23 @@ public sealed class AuthPlatformApplicationService
             credential.UpdatedAt);
     }
 
+    private async Task<AdminUserSummary> BuildAdminUserSummaryAsync(
+        AdminUser user,
+        CancellationToken cancellationToken)
+    {
+        var roles = await _unitOfWork.AdminUserRoles.ListByUserIdAsync(user.UserId, cancellationToken);
+
+        return new AdminUserSummary(
+            user.UserId,
+            user.Username,
+            user.DisplayName,
+            user.Status,
+            user.LastLoginAt,
+            roles.Select(role => role.RoleName).OrderBy(role => role, StringComparer.Ordinal).ToArray(),
+            user.CreatedAt,
+            user.UpdatedAt);
+    }
+
     private static ServiceClientSummary MapServiceClient(ServiceClient client)
     {
         return new ServiceClientSummary(
@@ -539,6 +811,25 @@ public sealed class AuthPlatformApplicationService
             client.Description,
             client.CreatedAt,
             client.UpdatedAt);
+    }
+
+    private async Task ReplaceAdminUserRolesAsync(
+        Guid userId,
+        IReadOnlyList<string> roles,
+        AdminAccessContext accessContext,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        await _unitOfWork.AdminUserRoles.ReplaceForUserAsync(
+            userId,
+            roles.Select(role => new AdminUserRoleAssignment
+            {
+                UserId = userId,
+                RoleName = role,
+                CreatedAt = now,
+                CreatedBy = accessContext.Actor,
+            }).ToArray(),
+            cancellationToken);
     }
 
     private async Task AppendAuditLogAsync(

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using MyCompany.AuthPlatform.Application;
 using MyCompany.AuthPlatform.Persistence.Abstractions;
 using MyCompany.Shared.Contracts.Domain;
 
@@ -270,7 +271,7 @@ internal sealed class DemoDataSeeder
             }
 
             var now = DateTimeOffset.UtcNow;
-            var passwordMaterial = EmbeddedIdentityPasswordHasher.HashPassword(configuredUser.Password);
+            var passwordMaterial = AdminUserPasswordHasher.HashPassword(configuredUser.Password);
             var user = new AdminUser
             {
                 UserId = Guid.NewGuid(),
@@ -281,7 +282,7 @@ internal sealed class DemoDataSeeder
                 Status = AdminUserStatus.Active,
                 PasswordHash = passwordMaterial.Hash,
                 PasswordSalt = passwordMaterial.Salt,
-                PasswordHashAlgorithm = EmbeddedIdentityPasswordHasher.Algorithm,
+                PasswordHashAlgorithm = AdminUserPasswordHasher.Algorithm,
                 PasswordIterations = passwordMaterial.Iterations,
                 CreatedAt = now,
                 CreatedBy = "seed.demo",

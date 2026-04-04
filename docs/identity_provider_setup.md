@@ -47,6 +47,19 @@ The response contains a bearer token that can be sent to protected endpoints.
 
 Configured bootstrap users are intended to seed the persisted admin-user store. After initial seeding, authentication should read from the stored user records rather than treating configuration as the long-term source of truth.
 
+The embedded identity mode is intended to pair with the administrative user-management APIs:
+
+- `GET /api/admin/users`
+- `GET /api/admin/users/{userId}`
+- `POST /api/admin/users`
+- `POST /api/admin/users/{userId}/disable`
+- `POST /api/admin/users/{userId}/reset-password`
+- `PUT /api/admin/users/{userId}/roles`
+
+Those endpoints require an `AccessAdministrator` bearer token and operate on the persisted admin-user store.
+
+Administrative passwords currently require a minimum length of 12 characters.
+
 ## External JWT Bearer Mode
 
 When `Authentication:Mode` is set to `JwtBearer`, configure these values in

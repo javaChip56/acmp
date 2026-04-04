@@ -41,7 +41,7 @@ internal sealed class EmbeddedIdentityService
         var user = await _unitOfWork.AdminUsers.GetByUsernameAsync(username, cancellationToken);
         if (user is null ||
             user.Status != AdminUserStatus.Active ||
-            !EmbeddedIdentityPasswordHasher.VerifyPassword(
+            !AdminUserPasswordHasher.VerifyPassword(
                 password,
                 user.PasswordHash,
                 user.PasswordSalt,
