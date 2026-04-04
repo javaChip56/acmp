@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyCompany.AuthPlatform.Pers
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyCompany.AuthPlatform.Api", "src\MyCompany.AuthPlatform.Api\MyCompany.AuthPlatform.Api.csproj", "{907669EB-7A78-4FE5-A3B8-D24A8078AF9C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyCompany.AuthPlatform.Application", "src\MyCompany.AuthPlatform.Application\MyCompany.AuthPlatform.Application.csproj", "{17A18A73-2AE1-45AA-97BC-C62B4F7053F9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -38,11 +40,16 @@ Global
 		{907669EB-7A78-4FE5-A3B8-D24A8078AF9C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{907669EB-7A78-4FE5-A3B8-D24A8078AF9C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{907669EB-7A78-4FE5-A3B8-D24A8078AF9C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{17A18A73-2AE1-45AA-97BC-C62B4F7053F9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{17A18A73-2AE1-45AA-97BC-C62B4F7053F9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{17A18A73-2AE1-45AA-97BC-C62B4F7053F9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{17A18A73-2AE1-45AA-97BC-C62B4F7053F9}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{72BD4EFB-97D3-40F5-85BF-E1D426A6A97D} = {D9D40F59-3D60-4215-89B9-7053C3E8C4F5}
 		{B68DB68B-7788-47A3-97F4-D0514B63A0F9} = {D9D40F59-3D60-4215-89B9-7053C3E8C4F5}
 		{9DE3243E-0E80-42B8-8908-769713E1A575} = {D9D40F59-3D60-4215-89B9-7053C3E8C4F5}
 		{907669EB-7A78-4FE5-A3B8-D24A8078AF9C} = {D9D40F59-3D60-4215-89B9-7053C3E8C4F5}
+		{17A18A73-2AE1-45AA-97BC-C62B4F7053F9} = {D9D40F59-3D60-4215-89B9-7053C3E8C4F5}
 	EndGlobalSection
 EndGlobal

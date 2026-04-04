@@ -12,5 +12,62 @@ Accept: application/json
 
 GET {{MyCompany.AuthPlatform.Api_HostAddress}}/api/clients
 Accept: application/json
+X-Demo-Role: AccessViewer
+
+###
+
+POST {{MyCompany.AuthPlatform.Api_HostAddress}}/api/clients
+Content-Type: application/json
+X-Demo-Role: AccessOperator
+X-Demo-Actor: demo.operator
+
+{
+  "clientCode": "inventory-api",
+  "clientName": "Inventory API",
+  "owner": "Supply Chain Team",
+  "environment": "Uat",
+  "description": "Demo client created from the HTTP scratch file.",
+  "metadataJson": "{\"contactEmail\":\"supply-chain@example.internal\"}"
+}
+
+###
+
+POST {{MyCompany.AuthPlatform.Api_HostAddress}}/api/clients/1f4a8ec5-31f6-4df8-8b7d-6c22f4f9d0a1/credentials/hmac
+Content-Type: application/json
+X-Demo-Role: AccessOperator
+X-Demo-Actor: demo.operator
+
+{
+  "expiresAt": "2027-04-01T00:00:00Z",
+  "scopes": [
+    "orders.read"
+  ],
+  "notes": "Demo-issued credential"
+}
+
+###
+
+POST {{MyCompany.AuthPlatform.Api_HostAddress}}/api/credentials/bd0dd9fc-90d2-4dc8-a99e-5f5d65d8b041/rotate
+Content-Type: application/json
+X-Demo-Role: AccessAdministrator
+X-Demo-Actor: demo.admin
+
+{
+  "expiresAt": "2027-05-01T00:00:00Z",
+  "gracePeriodEndsAt": "2026-04-20T00:00:00Z",
+  "notes": "Rotated in demo mode",
+  "reason": "Demonstrating extended grace period approval."
+}
+
+###
+
+POST {{MyCompany.AuthPlatform.Api_HostAddress}}/api/credentials/1f8e89ef-80cf-4e56-bf58-0f8684ea7d0e/revoke
+Content-Type: application/json
+X-Demo-Role: AccessOperator
+X-Demo-Actor: demo.operator
+
+{
+  "reason": "Demo revocation request"
+}
 
 ###

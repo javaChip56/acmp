@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Options;
+using MyCompany.AuthPlatform.Application;
 using MyCompany.AuthPlatform.Api;
 using MyCompany.AuthPlatform.Persistence.Abstractions;
 using MyCompany.AuthPlatform.Persistence.InMemory;
@@ -34,6 +35,7 @@ builder.Services.AddSingleton<IAuthPlatformUnitOfWork>(serviceProvider =>
     return new InMemoryAuthPlatformUnitOfWork(serviceProvider.GetRequiredService<InMemoryPersistenceState>());
 });
 builder.Services.AddSingleton<DemoDataSeeder>();
+builder.Services.AddSingleton<AuthPlatformApplicationService>();
 
 var app = builder.Build();
 
@@ -76,7 +78,7 @@ app.MapGet("/api/system/info", (
         Notes:
         [
             "This host currently uses the demo-only in-memory persistence provider.",
-            "Authentication and RBAC policies are defined in the docs but are not yet enforced by this demo host.",
+            "Demo authorization is driven by the X-Demo-Role and X-Demo-Actor headers until full authentication is implemented.",
             "Restarting the process clears the in-memory demo data."
         ],
         SupportedRoles:
@@ -89,98 +91,100 @@ app.MapGet("/api/system/info", (
 .WithName("GetSystemInfo")
 .WithOpenApi();
 
-app.MapGet("/api/clients", async (IAuthPlatformUnitOfWork unitOfWork, CancellationToken cancellationToken) =>
-{
-    var clients = await unitOfWork.ServiceClients.ListAsync(
-        new ListServiceClientsRequest { Take = 100 },
-        cancellationToken);
-
-    var items = clients.Items.Select(client => new ServiceClientSummaryResponse(
-        client.ClientId,
-        client.ClientCode,
-        client.ClientName,
-        client.Owner,
-        client.Environment,
-        client.Status,
-        client.Description,
-        client.CreatedAt,
-        client.UpdatedAt));
-
-    return TypedResults.Ok(items);
-})
+app.MapGet("/api/clients", (
+    HttpContext httpContext,
+    AuthPlatformApplicationService service,
+    CancellationToken cancellationToken) =>
+    ApiExecution.ExecuteAsync(httpContext, async accessContext =>
+        Results.Ok(await service.ListClientsAsync(accessContext, cancellationToken))))
 .WithName("ListClients")
 .WithOpenApi();
 
-app.MapGet("/api/clients/{clientId:guid}/credentials", async (
+app.MapGet("/api/clients/{clientId:guid}", (
     Guid clientId,
-    IAuthPlatformUnitOfWork unitOfWork,
+    HttpContext httpContext,
+    AuthPlatformApplicationService service,
     CancellationToken cancellationToken) =>
-{
-    var client = await unitOfWork.ServiceClients.GetByIdAsync(clientId, cancellationToken);
-    if (client is null)
+    ApiExecution.ExecuteAsync(httpContext, async accessContext =>
+        Results.Ok(await service.GetClientAsync(clientId, accessContext, cancellationToken))))
+.WithName("GetClient")
+.WithOpenApi();
+
+app.MapPost("/api/clients", (
+    CreateServiceClientRequest request,
+    HttpContext httpContext,
+    AuthPlatformApplicationService service,
+    CancellationToken cancellationToken) =>
+    ApiExecution.ExecuteAsync(httpContext, async accessContext =>
     {
-        return Results.NotFound(new { errorCode = "client_not_found", message = "The specified client could not be found." });
-    }
+        var client = await service.CreateServiceClientAsync(request, accessContext, cancellationToken);
+        return Results.Created($"/api/clients/{client.ClientId}", client);
+    }))
+.WithName("CreateClient")
+.WithOpenApi();
 
-    var credentials = await unitOfWork.Credentials.ListAsync(
-        new ListCredentialsRequest { ClientId = clientId, Take = 100 },
-        cancellationToken);
-
-    var items = new List<CredentialSummaryResponse>();
-    foreach (var credential in credentials.Items)
-    {
-        var scopes = await unitOfWork.CredentialScopes.ListByCredentialIdAsync(credential.CredentialId, cancellationToken);
-        var hmacDetail = await unitOfWork.HmacCredentialDetails.GetByCredentialIdAsync(credential.CredentialId, cancellationToken);
-
-        items.Add(new CredentialSummaryResponse(
-            credential.CredentialId,
-            credential.ClientId,
-            credential.AuthenticationMode,
-            credential.Status,
-            credential.Environment,
-            credential.ExpiresAt,
-            credential.DisabledAt,
-            credential.RevokedAt,
-            credential.ReplacedByCredentialId,
-            credential.RotationGraceEndsAt,
-            credential.Notes,
-            hmacDetail?.KeyId,
-            hmacDetail?.KeyVersion,
-            scopes.Select(scope => scope.ScopeName).OrderBy(scope => scope, StringComparer.Ordinal).ToArray(),
-            credential.CreatedAt,
-            credential.UpdatedAt));
-    }
-
-    return TypedResults.Ok(new ClientCredentialListResponse(
-        client.ClientId,
-        client.ClientCode,
-        client.ClientName,
-        items));
-})
+app.MapGet("/api/clients/{clientId:guid}/credentials", (
+    Guid clientId,
+    HttpContext httpContext,
+    AuthPlatformApplicationService service,
+    CancellationToken cancellationToken) =>
+    ApiExecution.ExecuteAsync(httpContext, async accessContext =>
+        Results.Ok(await service.ListClientCredentialsAsync(clientId, accessContext, cancellationToken))))
 .WithName("ListClientCredentials")
 .WithOpenApi();
 
-app.MapGet("/api/audit", async (IAuthPlatformUnitOfWork unitOfWork, CancellationToken cancellationToken) =>
-{
-    var auditEntries = await unitOfWork.AuditLogs.ListAsync(
-        new ListAuditLogEntriesRequest { Take = 200 },
-        cancellationToken);
+app.MapPost("/api/clients/{clientId:guid}/credentials/hmac", (
+    Guid clientId,
+    IssueHmacCredentialRequest request,
+    HttpContext httpContext,
+    AuthPlatformApplicationService service,
+    CancellationToken cancellationToken) =>
+    ApiExecution.ExecuteAsync(httpContext, async accessContext =>
+    {
+        var credential = await service.IssueHmacCredentialAsync(clientId, request, accessContext, cancellationToken);
+        return Results.Created($"/api/credentials/{credential.CredentialId}", credential);
+    }))
+.WithName("IssueHmacCredential")
+.WithOpenApi();
 
-    var items = auditEntries.Items.Select(entry => new AuditLogResponse(
-        entry.AuditId,
-        entry.Timestamp,
-        entry.Actor,
-        entry.Action,
-        entry.TargetType,
-        entry.TargetId,
-        entry.Environment,
-        entry.Reason,
-        entry.Outcome,
-        entry.CorrelationId,
-        entry.MetadataJson));
+app.MapGet("/api/credentials/{credentialId:guid}", (
+    Guid credentialId,
+    HttpContext httpContext,
+    AuthPlatformApplicationService service,
+    CancellationToken cancellationToken) =>
+    ApiExecution.ExecuteAsync(httpContext, async accessContext =>
+        Results.Ok(await service.GetCredentialAsync(credentialId, accessContext, cancellationToken))))
+.WithName("GetCredential")
+.WithOpenApi();
 
-    return TypedResults.Ok(items);
-})
+app.MapPost("/api/credentials/{credentialId:guid}/rotate", (
+    Guid credentialId,
+    RotateHmacCredentialRequest request,
+    HttpContext httpContext,
+    AuthPlatformApplicationService service,
+    CancellationToken cancellationToken) =>
+    ApiExecution.ExecuteAsync(httpContext, async accessContext =>
+        Results.Ok(await service.RotateHmacCredentialAsync(credentialId, accessContext: accessContext, request: request, cancellationToken: cancellationToken))))
+.WithName("RotateCredential")
+.WithOpenApi();
+
+app.MapPost("/api/credentials/{credentialId:guid}/revoke", (
+    Guid credentialId,
+    RevokeCredentialRequest request,
+    HttpContext httpContext,
+    AuthPlatformApplicationService service,
+    CancellationToken cancellationToken) =>
+    ApiExecution.ExecuteAsync(httpContext, async accessContext =>
+        Results.Ok(await service.RevokeCredentialAsync(credentialId, request, accessContext, cancellationToken))))
+.WithName("RevokeCredential")
+.WithOpenApi();
+
+app.MapGet("/api/audit", (
+    HttpContext httpContext,
+    AuthPlatformApplicationService service,
+    CancellationToken cancellationToken) =>
+    ApiExecution.ExecuteAsync(httpContext, async accessContext =>
+        Results.Ok(await service.ListAuditLogAsync(accessContext, cancellationToken))))
 .WithName("ListAuditLog")
 .WithOpenApi();
 
