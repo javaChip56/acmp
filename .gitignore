@@ -13,3 +13,7 @@
 .github/agents/calm-prompts/relationship-creation.md
 .github/agents/calm-prompts/standards-creation.md
 .github/agents/calm-prompts/timeline-creation.md
+
+# .NET build outputs
+**/bin/
+**/obj/
