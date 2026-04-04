@@ -1,0 +1,15 @@
+.github/agents/CALM.agent.md
+.github/agents/calm-prompts/architecture-creation.md
+.github/agents/calm-prompts/calm-cli-instructions.md
+.github/agents/calm-prompts/control-creation.md
+.github/agents/calm-prompts/decorator-creation.md
+.github/agents/calm-prompts/documentation-creation.md
+.github/agents/calm-prompts/flow-creation.md
+.github/agents/calm-prompts/interface-creation.md
+.github/agents/calm-prompts/metadata-creation.md
+.github/agents/calm-prompts/moment-creation.md
+.github/agents/calm-prompts/node-creation.md
+.github/agents/calm-prompts/pattern-creation.md
+.github/agents/calm-prompts/relationship-creation.md
+.github/agents/calm-prompts/standards-creation.md
+.github/agents/calm-prompts/timeline-creation.md

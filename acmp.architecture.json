@@ -1,0 +1,8 @@
+{
+  "$schema": "https://calm.finos.org/release/1.2/meta/calm.json",
+  "unique-id": "acmp",
+  "name": "ACMP",
+  "description": "Minimal CALM architecture for the Authentication Credential Management Platform.",
+  "nodes": [],
+  "relationships": []
+}
