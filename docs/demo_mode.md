@@ -22,7 +22,8 @@ The current default configuration uses:
 - seeds a small sample dataset on startup
 - stores all data in process memory only
 - clears all data when the process stops or restarts
-- uses `X-Demo-Role` and `X-Demo-Actor` headers to simulate admin roles until real authentication is added
+- authenticates requests through a demo header-backed ASP.NET Core authentication scheme
+- enforces role authorization policies for viewer, operator, and administrator access
 
 ## Useful Endpoints
 
@@ -46,8 +47,10 @@ The current default configuration uses:
 - `X-Demo-Actor: your.name` to stamp a friendlier actor name into the audit log
 - `X-Correlation-Id: value` to preserve a caller-supplied correlation id; one is generated automatically when omitted
 
+If `X-Demo-Role` is omitted, the demo host authenticates the request as `AccessViewer`.
+
 ## Notes
 
 - This is a demo host, not the full production host.
 - The in-memory provider is intended for demonstrations only.
-- Real authentication is not implemented yet; the current role model is simulated through headers for development and demos.
+- Production-grade identity integration is not implemented yet; the current host uses demo headers as the authentication source for development and demos.

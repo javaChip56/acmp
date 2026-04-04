@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Options;
 using MyCompany.AuthPlatform.Application;
@@ -17,6 +18,29 @@ builder.Services.Configure<PersistenceOptions>(
     builder.Configuration.GetSection(PersistenceOptions.SectionName));
 builder.Services.Configure<DemoModeOptions>(
     builder.Configuration.GetSection(DemoModeOptions.SectionName));
+
+builder.Services
+    .AddAuthentication(DemoAuthenticationDefaults.AuthenticationScheme)
+    .AddScheme<AuthenticationSchemeOptions, DemoHeaderAuthenticationHandler>(
+        DemoAuthenticationDefaults.AuthenticationScheme,
+        _ => { });
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(
+        AdminAccessPolicies.Viewer,
+        policy => policy.RequireRole(
+            AdminAccessRole.AccessViewer.ToString(),
+            AdminAccessRole.AccessOperator.ToString(),
+            AdminAccessRole.AccessAdministrator.ToString()));
+    options.AddPolicy(
+        AdminAccessPolicies.Operator,
+        policy => policy.RequireRole(
+            AdminAccessRole.AccessOperator.ToString(),
+            AdminAccessRole.AccessAdministrator.ToString()));
+    options.AddPolicy(
+        AdminAccessPolicies.Administrator,
+        policy => policy.RequireRole(AdminAccessRole.AccessAdministrator.ToString()));
+});
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -46,6 +70,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseAuthentication();
+app.UseAuthorization();
 
 var persistence = app.Services.GetRequiredService<IOptions<PersistenceOptions>>().Value;
 if (!string.Equals(persistence.Provider, PersistenceOptions.InMemoryDemoProvider, StringComparison.OrdinalIgnoreCase))
@@ -78,7 +104,7 @@ app.MapGet("/api/system/info", (
         Notes:
         [
             "This host currently uses the demo-only in-memory persistence provider.",
-            "Demo authorization is driven by the X-Demo-Role and X-Demo-Actor headers until full authentication is implemented.",
+            "Demo authentication is implemented through an ASP.NET Core header-backed scheme using X-Demo-Role and X-Demo-Actor.",
             "Restarting the process clears the in-memory demo data."
         ],
         SupportedRoles:
@@ -98,6 +124,7 @@ app.MapGet("/api/clients", (
     ApiExecution.ExecuteAsync(httpContext, async accessContext =>
         Results.Ok(await service.ListClientsAsync(accessContext, cancellationToken))))
 .WithName("ListClients")
+.RequireAuthorization(AdminAccessPolicies.Viewer)
 .WithOpenApi();
 
 app.MapGet("/api/clients/{clientId:guid}", (
@@ -108,6 +135,7 @@ app.MapGet("/api/clients/{clientId:guid}", (
     ApiExecution.ExecuteAsync(httpContext, async accessContext =>
         Results.Ok(await service.GetClientAsync(clientId, accessContext, cancellationToken))))
 .WithName("GetClient")
+.RequireAuthorization(AdminAccessPolicies.Viewer)
 .WithOpenApi();
 
 app.MapPost("/api/clients", (
@@ -121,6 +149,7 @@ app.MapPost("/api/clients", (
         return Results.Created($"/api/clients/{client.ClientId}", client);
     }))
 .WithName("CreateClient")
+.RequireAuthorization(AdminAccessPolicies.Operator)
 .WithOpenApi();
 
 app.MapGet("/api/clients/{clientId:guid}/credentials", (
@@ -131,6 +160,7 @@ app.MapGet("/api/clients/{clientId:guid}/credentials", (
     ApiExecution.ExecuteAsync(httpContext, async accessContext =>
         Results.Ok(await service.ListClientCredentialsAsync(clientId, accessContext, cancellationToken))))
 .WithName("ListClientCredentials")
+.RequireAuthorization(AdminAccessPolicies.Viewer)
 .WithOpenApi();
 
 app.MapPost("/api/clients/{clientId:guid}/credentials/hmac", (
@@ -145,6 +175,7 @@ app.MapPost("/api/clients/{clientId:guid}/credentials/hmac", (
         return Results.Created($"/api/credentials/{credential.CredentialId}", credential);
     }))
 .WithName("IssueHmacCredential")
+.RequireAuthorization(AdminAccessPolicies.Operator)
 .WithOpenApi();
 
 app.MapGet("/api/credentials/{credentialId:guid}", (
@@ -155,6 +186,7 @@ app.MapGet("/api/credentials/{credentialId:guid}", (
     ApiExecution.ExecuteAsync(httpContext, async accessContext =>
         Results.Ok(await service.GetCredentialAsync(credentialId, accessContext, cancellationToken))))
 .WithName("GetCredential")
+.RequireAuthorization(AdminAccessPolicies.Viewer)
 .WithOpenApi();
 
 app.MapPost("/api/credentials/{credentialId:guid}/rotate", (
@@ -166,6 +198,7 @@ app.MapPost("/api/credentials/{credentialId:guid}/rotate", (
     ApiExecution.ExecuteAsync(httpContext, async accessContext =>
         Results.Ok(await service.RotateHmacCredentialAsync(credentialId, accessContext: accessContext, request: request, cancellationToken: cancellationToken))))
 .WithName("RotateCredential")
+.RequireAuthorization(AdminAccessPolicies.Operator)
 .WithOpenApi();
 
 app.MapPost("/api/credentials/{credentialId:guid}/revoke", (
@@ -177,6 +210,7 @@ app.MapPost("/api/credentials/{credentialId:guid}/revoke", (
     ApiExecution.ExecuteAsync(httpContext, async accessContext =>
         Results.Ok(await service.RevokeCredentialAsync(credentialId, request, accessContext, cancellationToken))))
 .WithName("RevokeCredential")
+.RequireAuthorization(AdminAccessPolicies.Operator)
 .WithOpenApi();
 
 app.MapGet("/api/audit", (
@@ -186,6 +220,7 @@ app.MapGet("/api/audit", (
     ApiExecution.ExecuteAsync(httpContext, async accessContext =>
         Results.Ok(await service.ListAuditLogAsync(accessContext, cancellationToken))))
 .WithName("ListAuditLog")
+.RequireAuthorization(AdminAccessPolicies.Administrator)
 .WithOpenApi();
 
 app.Run();

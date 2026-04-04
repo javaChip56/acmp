@@ -1,4 +1,5 @@
 using MyCompany.AuthPlatform.Application;
+using System.Security.Claims;
 
 namespace MyCompany.AuthPlatform.Api;
 
@@ -23,36 +24,25 @@ internal static class ApiExecution
 
     private static AdminAccessContext ResolveAccessContext(HttpContext httpContext)
     {
-        var roleHeader = httpContext.Request.Headers["X-Demo-Role"].ToString();
-        var role = ResolveRole(roleHeader);
-        var actorHeader = httpContext.Request.Headers["X-Demo-Actor"].ToString();
-        var actor = string.IsNullOrWhiteSpace(actorHeader)
-            ? $"demo.{role.ToString().ToLowerInvariant()}"
-            : actorHeader.Trim();
-        var correlationId = httpContext.Request.Headers["X-Correlation-Id"].ToString();
+        var roleValue = httpContext.User.FindFirstValue(DemoAuthenticationDefaults.RoleClaimType)
+            ?? throw new ApplicationServiceException(401, "authentication_required", "An authenticated admin context is required.");
+        if (!Enum.TryParse<AdminAccessRole>(roleValue, ignoreCase: true, out var role))
+        {
+            throw new ApplicationServiceException(401, "authentication_required", "The authenticated admin role is invalid.");
+        }
+
+        var actor = httpContext.User.Identity?.Name;
+        if (string.IsNullOrWhiteSpace(actor))
+        {
+            actor = $"demo.{role.ToString().ToLowerInvariant()}";
+        }
+
+        var correlationId = httpContext.Request.Headers[DemoAuthenticationDefaults.CorrelationIdHeaderName].ToString();
         if (string.IsNullOrWhiteSpace(correlationId))
         {
             correlationId = $"demo-{Guid.NewGuid():N}";
         }
 
         return new AdminAccessContext(actor, role, correlationId);
-    }
-
-    private static AdminAccessRole ResolveRole(string? headerValue)
-    {
-        if (string.IsNullOrWhiteSpace(headerValue))
-        {
-            return AdminAccessRole.AccessViewer;
-        }
-
-        if (Enum.TryParse<AdminAccessRole>(headerValue.Trim(), ignoreCase: true, out var role))
-        {
-            return role;
-        }
-
-        throw new ApplicationServiceException(
-            400,
-            "invalid_demo_role",
-            "The supplied X-Demo-Role header is invalid. Use AccessViewer, AccessOperator, or AccessAdministrator.");
     }
 }
