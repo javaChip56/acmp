@@ -10,6 +10,7 @@ using MyCompany.AuthPlatform.Application;
 using MyCompany.AuthPlatform.Api;
 using MyCompany.AuthPlatform.Persistence.Abstractions;
 using MyCompany.AuthPlatform.Persistence.InMemory;
+using MyCompany.AuthPlatform.Persistence.SqlServer;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -108,21 +109,27 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 builder.Services.AddSingleton<InMemoryPersistenceState>();
-builder.Services.AddSingleton<IAuthPlatformUnitOfWork>(serviceProvider =>
+builder.Services.AddScoped<IAuthPlatformUnitOfWork>(serviceProvider =>
 {
     var persistenceOptions = serviceProvider.GetRequiredService<IOptions<PersistenceOptions>>().Value;
-    if (!string.Equals(persistenceOptions.Provider, PersistenceOptions.InMemoryDemoProvider, StringComparison.OrdinalIgnoreCase))
+    if (string.Equals(persistenceOptions.Provider, PersistenceOptions.InMemoryDemoProvider, StringComparison.OrdinalIgnoreCase))
     {
-        throw new InvalidOperationException(
-            $"Persistence provider '{persistenceOptions.Provider}' is not implemented. " +
-            $"Use '{PersistenceOptions.InMemoryDemoProvider}' to run the demo host.");
+        return new InMemoryAuthPlatformUnitOfWork(serviceProvider.GetRequiredService<InMemoryPersistenceState>());
     }
 
-    return new InMemoryAuthPlatformUnitOfWork(serviceProvider.GetRequiredService<InMemoryPersistenceState>());
+    throw new InvalidOperationException(
+        $"Persistence provider '{persistenceOptions.Provider}' is not implemented. " +
+        $"Use '{PersistenceOptions.InMemoryDemoProvider}' or '{PersistenceOptions.SqlServerProvider}'.");
 });
-builder.Services.AddSingleton<DemoDataSeeder>();
-builder.Services.AddSingleton<AuthPlatformApplicationService>();
-builder.Services.AddSingleton<EmbeddedIdentityService>();
+
+if (string.Equals(builder.Configuration[$"{PersistenceOptions.SectionName}:Provider"], PersistenceOptions.SqlServerProvider, StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddAuthPlatformSqlServerPersistence(builder.Configuration);
+}
+
+builder.Services.AddScoped<DemoDataSeeder>();
+builder.Services.AddScoped<AuthPlatformApplicationService>();
+builder.Services.AddScoped<EmbeddedIdentityService>();
 
 var app = builder.Build();
 
@@ -137,13 +144,22 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 var persistence = app.Services.GetRequiredService<IOptions<PersistenceOptions>>().Value;
-if (!string.Equals(persistence.Provider, PersistenceOptions.InMemoryDemoProvider, StringComparison.OrdinalIgnoreCase))
+if (!string.Equals(persistence.Provider, PersistenceOptions.InMemoryDemoProvider, StringComparison.OrdinalIgnoreCase) &&
+    !string.Equals(persistence.Provider, PersistenceOptions.SqlServerProvider, StringComparison.OrdinalIgnoreCase))
 {
     throw new InvalidOperationException(
         $"Configured persistence provider '{persistence.Provider}' is not supported by the current host.");
 }
 
-await app.Services.GetRequiredService<DemoDataSeeder>().SeedAsync(app.Lifetime.ApplicationStopping);
+if (string.Equals(persistence.Provider, PersistenceOptions.SqlServerProvider, StringComparison.OrdinalIgnoreCase))
+{
+    await app.Services.EnsureAuthPlatformSqlServerCreatedAsync();
+}
+
+using (var scope = app.Services.CreateScope())
+{
+    await scope.ServiceProvider.GetRequiredService<DemoDataSeeder>().SeedAsync(app.Lifetime.ApplicationStopping);
+}
 
 app.MapGet("/", () => Results.Redirect("/swagger"))
     .ExcludeFromDescription();
@@ -184,19 +200,25 @@ app.MapGet("/api/system/info", (
 {
     return TypedResults.Ok(new DemoSystemInfoResponse(
         AppName: "Authentication Credential Management Platform",
-        Mode: "Demo",
+        Mode: string.Equals(persistenceOptions.Value.Provider, PersistenceOptions.InMemoryDemoProvider, StringComparison.OrdinalIgnoreCase)
+            ? "Demo"
+            : "Configured",
         PersistenceProvider: persistenceOptions.Value.Provider,
         SeedOnStartup: demoOptions.Value.SeedOnStartup,
         AuthenticationMode: authProviderOptions.Mode,
         Notes:
         [
-            "This host currently uses the demo-only in-memory persistence provider.",
+            string.Equals(persistenceOptions.Value.Provider, PersistenceOptions.InMemoryDemoProvider, StringComparison.OrdinalIgnoreCase)
+                ? "This host currently uses the demo-only in-memory persistence provider."
+                : "This host currently uses the SQL Server persistence provider.",
             authProviderOptions.Mode == AuthenticationModes.DemoHeader
                 ? "Demo authentication is implemented through an ASP.NET Core header-backed scheme using X-Demo-Role and X-Demo-Actor."
                 : authProviderOptions.Mode == AuthenticationModes.EmbeddedIdentity
                     ? "Authentication is implemented through an embedded identity provider that issues local bearer tokens."
-                : "Authentication is implemented through JWT bearer tokens issued by the configured identity provider.",
-            "Restarting the process clears the in-memory demo data."
+                    : "Authentication is implemented through JWT bearer tokens issued by the configured identity provider.",
+            string.Equals(persistenceOptions.Value.Provider, PersistenceOptions.InMemoryDemoProvider, StringComparison.OrdinalIgnoreCase)
+                ? "Restarting the process clears the in-memory demo data."
+                : "SQL-backed data persists across application restarts."
         ],
         SupportedRoles:
         [
