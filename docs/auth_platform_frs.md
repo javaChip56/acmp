@@ -207,6 +207,58 @@ The encrypted client credential package file shall be protected so it can only b
 ### FRS-3.4.12 Client Package Integrity
 The encrypted client credential package file shall include integrity protection so tampering is detected and signing fails securely.
 
+### FRS-3.4.13 Package Format Versioning
+The encrypted service-side and client-side credential package files shall use a versioned package format with an explicit schema-version field.
+
+The initial release shall define and support a single HMAC package format version for both package types.
+
+### FRS-3.4.14 Package Structure
+Each encrypted credential package file shall contain:
+
+- package envelope metadata
+- credential metadata required for runtime validation or signing
+- protection-binding metadata
+- authenticated encrypted package payload
+
+The package structure shall be defined explicitly so both issuer and DLL consumers interpret the same file format.
+
+### FRS-3.4.15 Package Protection Mechanism
+The initial release shall protect encrypted credential package files using authenticated encryption for the package payload and public-key wrapping of the package data key.
+
+The package shall be bound to an approved local X.509 certificate protection context so that only the intended DLL consumer with access to the corresponding private key can decrypt it.
+
+### FRS-3.4.16 Required Package Metadata
+At minimum, the package format shall define required metadata fields for:
+
+- schema version
+- package type
+- package identifier
+- credential identifier
+- `KeyId`
+- `KeyVersion`
+- credential status
+- environment
+- expiry
+- issuance timestamp
+- protection-binding metadata
+- package encryption algorithm metadata
+
+The client-side package shall additionally define the canonical signing profile identifier and HMAC algorithm metadata.
+
+### FRS-3.4.17 Package Replacement Workflow
+The package specification shall define how recipient-side and client-side package files are replaced or refreshed.
+
+The workflow shall include:
+
+- deterministic file naming
+- temporary-file write before activation
+- atomic replacement of the active package file
+- DLL detection of file replacement or refresh
+- secure reload of the new package before it is used
+
+### FRS-3.4.18 Replacement Failure Behavior
+If a replacement package file is missing, unreadable, tampered, schema-incompatible, bound to the wrong protection context, or otherwise invalid, the DLL shall reject the new package and fail securely according to the package reload rules.
+
 ---
 
 ## 3.5 MiniKMS Integration

@@ -180,36 +180,47 @@ Suggested fields:
 #### HmacCredentialPackage
 Represents the encrypted file artifact issued for service-side validation.
 
-Suggested fields:
+Required envelope fields:
 
+- SchemaVersion
+- PackageType
+- PackageId
+- CredentialId
 - KeyId
 - KeyVersion
 - CredentialStatus
 - Environment
-- Scopes
 - ExpiresAt
-- EncryptedSecret
-- PackageEncryptionMetadata
-- IntegritySignature or AuthenticatedTag
 - IssuedAt
+- ProtectionBinding
+- CryptoMetadata
+- Ciphertext
+- AuthTag
 
 #### HmacClientCredentialPackage
 Represents the encrypted file artifact issued for client-side outbound signing.
 
-Suggested fields:
+Required envelope fields:
 
+- SchemaVersion
+- PackageType
+- PackageId
+- CredentialId
 - KeyId
 - KeyVersion
 - CredentialStatus
 - Environment
-- Scopes
 - ExpiresAt
-- HmacAlgorithm
-- CanonicalSigningProfile
-- EncryptedSecret
-- PackageEncryptionMetadata
-- IntegritySignature or AuthenticatedTag
 - IssuedAt
+- ProtectionBinding
+- CryptoMetadata
+- Ciphertext
+- AuthTag
+
+The decrypted client package payload shall additionally contain:
+
+- HmacAlgorithm
+- CanonicalSigningProfileId
 
 ### 5.3 Future JWT Detail Entity
 Reserved for future extension, such as:
@@ -591,6 +602,172 @@ The initial implementation shall provide a reusable .NET client library/DLL that
 - generates HMAC headers, including `KeyId`, timestamp, and optional nonce
 - caches decrypted client package state in memory
 - fails signing securely if required client package state cannot be loaded or refreshed
+
+#### 10.4.1 Package Format Overview
+The initial release should standardize both service-side and client-side HMAC package files as UTF-8 JSON envelopes containing authenticated encrypted payloads.
+
+Recommended package file names:
+
+- service-side validation package: `{KeyId}.service.acmppkg.json`
+- client-side signing package: `{KeyId}.client.acmppkg.json`
+
+Recommended package media types:
+
+- service-side validation package: `application/vnd.acmp.hmac-service-package+json`
+- client-side signing package: `application/vnd.acmp.hmac-client-package+json`
+
+#### 10.4.2 Package Envelope Structure
+Recommended service-side package envelope:
+
+```json
+{
+  "schemaVersion": "acmp.hmac.package.v1",
+  "packageType": "ServiceValidation",
+  "packageId": "pkg-3001",
+  "credentialId": "cred-2001",
+  "keyId": "key-uat-001",
+  "keyVersion": "kms-v1",
+  "credentialStatus": "Active",
+  "environment": "UAT",
+  "expiresAt": "2027-04-01T00:00:00Z",
+  "issuedAt": "2026-04-04T10:05:00Z",
+  "protectionBinding": {
+    "bindingType": "X509Thumbprint",
+    "certificateThumbprint": "ABCD1234EF567890ABCD1234EF567890ABCD1234",
+    "storeLocation": "LocalMachine",
+    "storeName": "My"
+  },
+  "cryptoMetadata": {
+    "contentEncryptionAlgorithm": "A256GCM",
+    "keyEncryptionAlgorithm": "RSA-OAEP-256",
+    "payloadNonce": "base64-nonce",
+    "encryptedDataKey": "base64-wrapped-key"
+  },
+  "ciphertext": "base64-ciphertext",
+  "authTag": "base64-auth-tag"
+}
+```
+
+Recommended client-side package envelope:
+
+```json
+{
+  "schemaVersion": "acmp.hmac.package.v1",
+  "packageType": "ClientSigning",
+  "packageId": "pkg-3002",
+  "credentialId": "cred-2001",
+  "keyId": "key-uat-001",
+  "keyVersion": "kms-v1",
+  "credentialStatus": "Active",
+  "environment": "UAT",
+  "expiresAt": "2027-04-01T00:00:00Z",
+  "issuedAt": "2026-04-04T10:05:00Z",
+  "protectionBinding": {
+    "bindingType": "X509Thumbprint",
+    "certificateThumbprint": "ABCD1234EF567890ABCD1234EF567890ABCD1234",
+    "storeLocation": "LocalMachine",
+    "storeName": "My"
+  },
+  "cryptoMetadata": {
+    "contentEncryptionAlgorithm": "A256GCM",
+    "keyEncryptionAlgorithm": "RSA-OAEP-256",
+    "payloadNonce": "base64-nonce",
+    "encryptedDataKey": "base64-wrapped-key"
+  },
+  "ciphertext": "base64-ciphertext",
+  "authTag": "base64-auth-tag"
+}
+```
+
+#### 10.4.3 Decrypted Payload Structure
+The package envelope metadata remains outside the encrypted payload for routing and binding checks.
+
+Recommended decrypted service-side payload:
+
+```json
+{
+  "secretBase64": "base64-secret-value",
+  "hmacAlgorithm": "HMACSHA256",
+  "scopes": [
+    "orders.read",
+    "orders.write"
+  ]
+}
+```
+
+Recommended decrypted client-side payload:
+
+```json
+{
+  "secretBase64": "base64-secret-value",
+  "hmacAlgorithm": "HMACSHA256",
+  "canonicalSigningProfileId": "acmp-hmac-v1",
+  "scopes": [
+    "orders.read",
+    "orders.write"
+  ]
+}
+```
+
+#### 10.4.4 Package Protection Mechanism
+The initial release should use this package protection mechanism:
+
+1. Generate a random AES-256 content-encryption key.
+2. Serialize the package payload as UTF-8 JSON.
+3. Encrypt the payload using AES-GCM.
+4. Wrap the AES key using RSA-OAEP-256 with the public key of the configured X.509 certificate.
+5. Store certificate binding metadata in `ProtectionBinding`.
+6. Store the AES-GCM ciphertext and authentication tag in the package envelope.
+
+The DLL consumer shall:
+
+1. locate the configured X.509 certificate from the specified certificate store
+2. confirm that the certificate thumbprint matches the package binding metadata
+3. unwrap the content-encryption key using the certificate private key
+4. verify the AES-GCM authentication tag
+5. deserialize the decrypted payload only after integrity verification succeeds
+
+#### 10.4.5 Binding and Validation Rules
+The DLL shall reject a package if any of the following is true:
+
+- `schemaVersion` is unsupported
+- `packageType` does not match the expected DLL usage mode
+- required envelope fields are missing
+- `credentialStatus` is not valid for use
+- `expiresAt` is in the past
+- the configured certificate cannot be found
+- the certificate thumbprint or store metadata does not match the expected protection binding
+- key unwrap or AES-GCM authentication fails
+- `keyId` or `keyVersion` is inconsistent with the expected package file identity
+
+#### 10.4.6 Package Replacement and Refresh Workflow
+Recommended package replacement workflow:
+
+1. The management API generates a new package file for the target `KeyId`.
+2. The deployment or distribution process writes the new file to the target directory using a temporary file name in the same directory, such as `{KeyId}.service.acmppkg.json.tmp`.
+3. After the file is fully written and flushed, the temporary file is atomically renamed or replaced over the active package file.
+4. The DLL detects the file change by filesystem watcher, timestamp check, or periodic polling.
+5. The DLL validates and decrypts the replacement package before promoting it to active in-memory state.
+6. If validation succeeds, the DLL swaps the in-memory package state to the new package version.
+
+#### 10.4.7 Replacement Failure Behavior
+If a replacement package file is detected but fails validation, the DLL shall not promote it to active state.
+
+If a previously loaded in-memory package state is still valid, the DLL may continue using that last known-good state until its cache entry expires or becomes invalid.
+
+If no valid package state is available after replacement validation fails, the DLL shall fail closed.
+
+#### 10.4.8 Rotation and Package Refresh Interaction
+When a credential is rotated:
+
+- the replacement credential package shall be issued with the new `KeyId`
+- the superseded package may continue to validate only as long as the old credential remains valid under the configured grace-period rules
+- after grace-period expiry or immediate revocation, the old package shall no longer be accepted even if the file remains present
+
+#### 10.4.9 Canonical Signing Profile Identifier
+The initial client package format should use `acmp-hmac-v1` as the canonical signing profile identifier.
+
+This identifier binds the client package to the HMAC request canonicalization rules defined in section 9.
 
 ### 10.5 Cache Technology
 Initial implementation shall use `IMemoryCache`.
@@ -1088,8 +1265,8 @@ Validation notes:
   "credentialId": "cred-2001",
   "keyId": "key-uat-001",
   "packageType": "ServiceValidation",
-  "fileName": "key-uat-001.validation.acmp",
-  "contentType": "application/octet-stream",
+  "fileName": "key-uat-001.service.acmppkg.json",
+  "contentType": "application/vnd.acmp.hmac-service-package+json",
   "issuedAt": "2026-04-04T10:05:00Z",
   "keyVersion": "kms-v1"
 }
@@ -1364,6 +1541,9 @@ Cover:
 - reject audit access for non-administrative roles
 - allow audit access for `AccessAdministrator`
 - reject the superseded credential after grace-period expiry
+- reject package with unsupported schema version
+- reject package bound to the wrong certificate protection context
+- load replacement package only after successful validation and decryption
 - reload encrypted credential package file after replacement
 - reload encrypted client credential package file after replacement
 - reject tampered encrypted credential package file

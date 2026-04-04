@@ -68,13 +68,13 @@
       "unique-id": "encrypted-credential-package",
       "node-type": "data-asset",
       "name": "Encrypted Credential Package",
-      "description": "Encrypted file artifact issued per KeyId for recipient-side HMAC validation in EncryptedFile mode."
+      "description": "Versioned encrypted JSON package artifact issued per KeyId for recipient-side HMAC validation in EncryptedFile mode, bound to an approved X.509 protection context."
     },
     {
       "unique-id": "encrypted-client-credential-package",
       "node-type": "data-asset",
       "name": "Encrypted Client Credential Package",
-      "description": "Encrypted file artifact issued per KeyId for client-side outbound HMAC signing."
+      "description": "Versioned encrypted JSON package artifact issued per KeyId for client-side outbound HMAC signing, bound to an approved X.509 protection context."
     }
   ],
   "relationships": [
@@ -159,7 +159,7 @@
     },
     {
       "unique-id": "management-api-to-encrypted-credential-package",
-      "description": "Issues recipient-side encrypted credential packages to",
+      "description": "Issues versioned recipient-side encrypted package envelopes to",
       "relationship-type": {
         "connects": {
           "source": {
@@ -173,7 +173,7 @@
     },
     {
       "unique-id": "management-api-to-encrypted-client-credential-package",
-      "description": "Issues client-side encrypted credential packages to",
+      "description": "Issues versioned client-side encrypted package envelopes to",
       "relationship-type": {
         "connects": {
           "source": {
@@ -230,7 +230,7 @@
     },
     {
       "unique-id": "protected-recipient-service-to-encrypted-credential-package",
-      "description": "Reads recipient-side encrypted credential material from",
+      "description": "Loads, decrypts, and validates recipient-side encrypted package envelopes from",
       "relationship-type": {
         "connects": {
           "source": {
@@ -244,7 +244,7 @@
     },
     {
       "unique-id": "client-service-to-encrypted-client-credential-package",
-      "description": "Loads outbound signing material from",
+      "description": "Loads, decrypts, and validates outbound signing package envelopes from",
       "relationship-type": {
         "connects": {
           "source": {
@@ -457,7 +457,7 @@
     {
       "unique-id": "issue-encrypted-credential-package-flow",
       "name": "Issue Encrypted Credential Package",
-      "description": "AccessOperator or AccessAdministrator uses the portal and management API to issue a recipient-side encrypted credential package.",
+      "description": "AccessOperator or AccessAdministrator uses the portal and management API to issue a versioned recipient-side encrypted package envelope bound to the target protection context.",
       "transitions": [
         {
           "relationship-unique-id": "access-operator-uses-admin-portal",
@@ -472,7 +472,7 @@
         {
           "relationship-unique-id": "management-api-to-encrypted-credential-package",
           "sequence-number": 3,
-          "description": "Credential management API issues the recipient-side encrypted credential package."
+          "description": "Credential management API issues the recipient-side encrypted JSON package envelope with binding and cryptographic metadata."
         }
       ]
     },
@@ -535,24 +535,24 @@
     {
       "unique-id": "reload-recipient-credential-package-flow",
       "name": "Reload Recipient Credential Package",
-      "description": "Protected recipient service reloads recipient-side package state after package replacement or refresh.",
+      "description": "Protected recipient service detects atomic replacement or refresh of a recipient-side package file, validates it, and reloads it securely.",
       "transitions": [
         {
           "relationship-unique-id": "protected-recipient-service-to-encrypted-credential-package",
           "sequence-number": 1,
-          "description": "Protected recipient service reads refreshed encrypted credential package contents."
+          "description": "Protected recipient service reads the replacement package envelope, validates schema and protection binding, and decrypts it before activation."
         }
       ]
     },
     {
       "unique-id": "reload-client-credential-package-flow",
       "name": "Reload Client Credential Package",
-      "description": "Client service reloads client-side package state after package replacement or refresh.",
+      "description": "Client service detects atomic replacement or refresh of a client-side package file, validates it, and reloads it securely.",
       "transitions": [
         {
           "relationship-unique-id": "client-service-to-encrypted-client-credential-package",
           "sequence-number": 1,
-          "description": "Client service reads refreshed encrypted client credential package contents."
+          "description": "Client service reads the replacement package envelope, validates schema and protection binding, and decrypts it before activation."
         }
       ]
     },
@@ -581,7 +581,7 @@
     {
       "unique-id": "issue-encrypted-client-credential-package-flow",
       "name": "Issue Encrypted Client Credential Package",
-      "description": "AccessOperator or AccessAdministrator uses the portal and management API to issue a client-side encrypted credential package.",
+      "description": "AccessOperator or AccessAdministrator uses the portal and management API to issue a versioned client-side encrypted package envelope bound to the target protection context.",
       "transitions": [
         {
           "relationship-unique-id": "access-operator-uses-admin-portal",
@@ -596,7 +596,7 @@
         {
           "relationship-unique-id": "management-api-to-encrypted-client-credential-package",
           "sequence-number": 3,
-          "description": "Credential management API issues the client-side encrypted credential package."
+          "description": "Credential management API issues the client-side encrypted JSON package envelope with binding and cryptographic metadata."
         }
       ]
     },
