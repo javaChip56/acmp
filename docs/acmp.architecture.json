@@ -11,10 +11,22 @@
       "description": "Central internal platform for service and client registration, credential lifecycle management, HMAC issuance, authorization metadata, and audit governance."
     },
     {
-      "unique-id": "authorized-administrator",
+      "unique-id": "access-viewer",
       "node-type": "actor",
-      "name": "Authorized Administrator",
-      "description": "Authorized internal administrator who manages clients, credentials, scopes, revocation, rotation, and related platform actions."
+      "name": "AccessViewer",
+      "description": "Read-only internal user who can view service or client access listings and credential metadata."
+    },
+    {
+      "unique-id": "access-operator",
+      "node-type": "actor",
+      "name": "AccessOperator",
+      "description": "Internal operator who can issue, rotate, revoke, disable, and package credentials with standard grace periods."
+    },
+    {
+      "unique-id": "access-administrator",
+      "node-type": "actor",
+      "name": "AccessAdministrator",
+      "description": "Elevated internal administrator who can perform operator actions, configure extended grace periods, and view audit data."
     },
     {
       "unique-id": "admin-web-portal",
@@ -67,11 +79,35 @@
   ],
   "relationships": [
     {
-      "unique-id": "administrator-uses-admin-portal",
-      "description": "Manages clients, credentials, scopes, and platform operations using",
+      "unique-id": "access-viewer-uses-admin-portal",
+      "description": "Views service, client, and credential access data using",
       "relationship-type": {
         "interacts": {
-          "actor": "authorized-administrator",
+          "actor": "access-viewer",
+          "nodes": [
+            "admin-web-portal"
+          ]
+        }
+      }
+    },
+    {
+      "unique-id": "access-operator-uses-admin-portal",
+      "description": "Performs standard credential lifecycle operations using",
+      "relationship-type": {
+        "interacts": {
+          "actor": "access-operator",
+          "nodes": [
+            "admin-web-portal"
+          ]
+        }
+      }
+    },
+    {
+      "unique-id": "access-administrator-uses-admin-portal",
+      "description": "Performs elevated administrative and audit operations using",
+      "relationship-type": {
+        "interacts": {
+          "actor": "access-administrator",
           "nodes": [
             "admin-web-portal"
           ]
@@ -252,12 +288,12 @@
     {
       "unique-id": "register-client-service-flow",
       "name": "Register Client Service",
-      "description": "Authorized administrator creates a new internal client or service record through the portal and management API.",
+      "description": "AccessAdministrator creates a new internal client or service record through the portal and management API.",
       "transitions": [
         {
-          "relationship-unique-id": "administrator-uses-admin-portal",
+          "relationship-unique-id": "access-administrator-uses-admin-portal",
           "sequence-number": 1,
-          "description": "Administrator starts client or service registration from the admin portal."
+          "description": "AccessAdministrator starts client or service registration from the admin portal."
         },
         {
           "relationship-unique-id": "admin-portal-to-management-api",
@@ -274,12 +310,12 @@
     {
       "unique-id": "update-client-service-flow",
       "name": "Update Client Service",
-      "description": "Authorized administrator updates client or service metadata through the portal and management API.",
+      "description": "AccessAdministrator updates client or service metadata through the portal and management API.",
       "transitions": [
         {
-          "relationship-unique-id": "administrator-uses-admin-portal",
+          "relationship-unique-id": "access-administrator-uses-admin-portal",
           "sequence-number": 1,
-          "description": "Administrator opens the client or service update action in the admin portal."
+          "description": "AccessAdministrator opens the client or service update action in the admin portal."
         },
         {
           "relationship-unique-id": "admin-portal-to-management-api",
@@ -296,12 +332,12 @@
     {
       "unique-id": "disable-client-service-flow",
       "name": "Disable Client Service",
-      "description": "Authorized administrator disables a client or service through the portal and management API.",
+      "description": "AccessAdministrator disables a client or service through the portal and management API.",
       "transitions": [
         {
-          "relationship-unique-id": "administrator-uses-admin-portal",
+          "relationship-unique-id": "access-administrator-uses-admin-portal",
           "sequence-number": 1,
-          "description": "Administrator starts the disable action for the client or service from the admin portal."
+          "description": "AccessAdministrator starts the disable action for the client or service from the admin portal."
         },
         {
           "relationship-unique-id": "admin-portal-to-management-api",
@@ -318,12 +354,12 @@
     {
       "unique-id": "issue-hmac-credential-flow",
       "name": "Issue HMAC Credential",
-      "description": "Authorized administrator issues a new HMAC credential using the portal, management API, MiniKMS, and persistence store.",
+      "description": "AccessOperator or AccessAdministrator issues a new HMAC credential using the portal, management API, MiniKMS, and persistence store.",
       "transitions": [
         {
-          "relationship-unique-id": "administrator-uses-admin-portal",
+          "relationship-unique-id": "access-operator-uses-admin-portal",
           "sequence-number": 1,
-          "description": "Administrator starts HMAC credential issuance from the admin portal."
+          "description": "AccessOperator starts HMAC credential issuance from the admin portal."
         },
         {
           "relationship-unique-id": "admin-portal-to-management-api",
@@ -343,41 +379,68 @@
       ]
     },
     {
-      "unique-id": "rotate-hmac-credential-flow",
-      "name": "Rotate HMAC Credential",
-      "description": "Authorized administrator rotates an HMAC credential using the portal, management API, MiniKMS, and persistence store.",
+      "unique-id": "rotate-hmac-credential-standard-flow",
+      "name": "Rotate HMAC Credential (Standard)",
+      "description": "AccessOperator or AccessAdministrator rotates an HMAC credential with immediate cutover or a standard grace period up to 14 days using the portal, management API, MiniKMS, and persistence store.",
       "transitions": [
         {
-          "relationship-unique-id": "administrator-uses-admin-portal",
+          "relationship-unique-id": "access-operator-uses-admin-portal",
           "sequence-number": 1,
-          "description": "Administrator starts HMAC credential rotation from the admin portal."
+          "description": "AccessOperator starts standard HMAC credential rotation from the admin portal."
         },
         {
           "relationship-unique-id": "admin-portal-to-management-api",
           "sequence-number": 2,
-          "description": "Admin portal submits the credential rotation request to the credential management API."
+          "description": "Admin portal submits the standard credential rotation request to the credential management API."
         },
         {
           "relationship-unique-id": "management-api-to-mini-kms",
           "sequence-number": 3,
-          "description": "Credential management API requests new secret generation and protection from MiniKMS."
+          "description": "Credential management API requests new secret generation and protection from MiniKMS for the replacement credential."
         },
         {
           "relationship-unique-id": "management-api-to-persistence-store",
           "sequence-number": 4,
-          "description": "Credential management API persists rotated credential state and related metadata."
+          "description": "Credential management API persists replacement credential state, grace-period metadata when applicable, and related audit data."
+        }
+      ]
+    },
+    {
+      "unique-id": "rotate-hmac-credential-extended-grace-flow",
+      "name": "Rotate HMAC Credential (Extended Grace)",
+      "description": "AccessAdministrator rotates an HMAC credential with an extended grace period longer than 14 days up to 30 days, with explicit operational reason and audit traceability.",
+      "transitions": [
+        {
+          "relationship-unique-id": "access-administrator-uses-admin-portal",
+          "sequence-number": 1,
+          "description": "AccessAdministrator starts extended-grace HMAC credential rotation from the admin portal."
+        },
+        {
+          "relationship-unique-id": "admin-portal-to-management-api",
+          "sequence-number": 2,
+          "description": "Admin portal submits the extended-grace credential rotation request and operational reason to the credential management API."
+        },
+        {
+          "relationship-unique-id": "management-api-to-mini-kms",
+          "sequence-number": 3,
+          "description": "Credential management API requests new secret generation and protection from MiniKMS for the replacement credential."
+        },
+        {
+          "relationship-unique-id": "management-api-to-persistence-store",
+          "sequence-number": 4,
+          "description": "Credential management API persists replacement credential state, extended grace-period metadata, and audit evidence of the acting role and reason."
         }
       ]
     },
     {
       "unique-id": "revoke-hmac-credential-flow",
       "name": "Revoke HMAC Credential",
-      "description": "Authorized administrator revokes an HMAC credential through the portal and management API.",
+      "description": "AccessOperator or AccessAdministrator revokes an HMAC credential through the portal and management API.",
       "transitions": [
         {
-          "relationship-unique-id": "administrator-uses-admin-portal",
+          "relationship-unique-id": "access-operator-uses-admin-portal",
           "sequence-number": 1,
-          "description": "Administrator starts credential revocation from the admin portal."
+          "description": "AccessOperator starts credential revocation from the admin portal."
         },
         {
           "relationship-unique-id": "admin-portal-to-management-api",
@@ -394,12 +457,12 @@
     {
       "unique-id": "issue-encrypted-credential-package-flow",
       "name": "Issue Encrypted Credential Package",
-      "description": "Authorized administrator uses the portal and management API to issue a recipient-side encrypted credential package.",
+      "description": "AccessOperator or AccessAdministrator uses the portal and management API to issue a recipient-side encrypted credential package.",
       "transitions": [
         {
-          "relationship-unique-id": "administrator-uses-admin-portal",
+          "relationship-unique-id": "access-operator-uses-admin-portal",
           "sequence-number": 1,
-          "description": "Administrator starts encrypted credential package issuance from the admin portal."
+          "description": "AccessOperator starts encrypted credential package issuance from the admin portal."
         },
         {
           "relationship-unique-id": "admin-portal-to-management-api",
@@ -496,12 +559,12 @@
     {
       "unique-id": "list-credential-metadata-flow",
       "name": "List Credential Metadata",
-      "description": "Authorized user lists credential metadata without exposing plaintext secrets.",
+      "description": "AccessViewer, AccessOperator, or AccessAdministrator lists credential metadata without exposing plaintext secrets.",
       "transitions": [
         {
-          "relationship-unique-id": "administrator-uses-admin-portal",
+          "relationship-unique-id": "access-viewer-uses-admin-portal",
           "sequence-number": 1,
-          "description": "Authorized user opens credential metadata listing in the admin portal."
+          "description": "AccessViewer opens credential metadata listing in the admin portal."
         },
         {
           "relationship-unique-id": "admin-portal-to-management-api",
@@ -518,12 +581,12 @@
     {
       "unique-id": "issue-encrypted-client-credential-package-flow",
       "name": "Issue Encrypted Client Credential Package",
-      "description": "Authorized administrator uses the portal and management API to issue a client-side encrypted credential package.",
+      "description": "AccessOperator or AccessAdministrator uses the portal and management API to issue a client-side encrypted credential package.",
       "transitions": [
         {
-          "relationship-unique-id": "administrator-uses-admin-portal",
+          "relationship-unique-id": "access-operator-uses-admin-portal",
           "sequence-number": 1,
-          "description": "Administrator starts encrypted client credential package issuance from the admin portal."
+          "description": "AccessOperator starts encrypted client credential package issuance from the admin portal."
         },
         {
           "relationship-unique-id": "admin-portal-to-management-api",
@@ -534,6 +597,28 @@
           "relationship-unique-id": "management-api-to-encrypted-client-credential-package",
           "sequence-number": 3,
           "description": "Credential management API issues the client-side encrypted credential package."
+        }
+      ]
+    },
+    {
+      "unique-id": "view-audit-log-flow",
+      "name": "View Audit Log",
+      "description": "AccessAdministrator views audit data through the admin portal and management API.",
+      "transitions": [
+        {
+          "relationship-unique-id": "access-administrator-uses-admin-portal",
+          "sequence-number": 1,
+          "description": "AccessAdministrator opens the audit log view in the admin portal."
+        },
+        {
+          "relationship-unique-id": "admin-portal-to-management-api",
+          "sequence-number": 2,
+          "description": "Admin portal requests audit data from the credential management API."
+        },
+        {
+          "relationship-unique-id": "management-api-to-persistence-store",
+          "sequence-number": 3,
+          "description": "Credential management API reads audit records from the persistence store."
         }
       ]
     }
