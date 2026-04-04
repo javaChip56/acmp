@@ -1,0 +1,75 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  publish:
+    name: Publish Tagged Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag commit is on main
+        shell: bash
+        run: |
+          git fetch origin main --depth=1
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/main"; then
+            echo "Tag $GITHUB_REF_NAME does not point to a commit contained in origin/main."
+            exit 1
+          fi
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore ./Acmp.sln
+
+      - name: Build
+        run: dotnet build ./Acmp.sln --configuration Release --no-restore -warnaserror
+
+      - name: Test
+        run: dotnet test ./Acmp.sln --configuration Release --no-build --logger "trx;LogFileName=release-test-results.trx" --results-directory ./artifacts/test-results
+
+      - name: Publish API
+        run: dotnet publish ./src/MyCompany.AuthPlatform.Api/MyCompany.AuthPlatform.Api.csproj --configuration Release --no-build --output ./artifacts/publish/api
+
+      - name: Package release artifact
+        shell: bash
+        run: |
+          mkdir -p ./artifacts/release
+          tar -czf "./artifacts/release/acmp-api-${GITHUB_REF_NAME}.tar.gz" -C ./artifacts/publish/api .
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: acmp-api-${{ github.ref_name }}
+          path: artifacts/release/acmp-api-${{ github.ref_name }}.tar.gz
+          if-no-files-found: error
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          artifact="./artifacts/release/acmp-api-${GITHUB_REF_NAME}.tar.gz"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$artifact" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$artifact" --generate-notes --title "$GITHUB_REF_NAME"
+          fi
