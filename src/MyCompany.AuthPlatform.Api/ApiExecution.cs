@@ -1,5 +1,5 @@
-using MyCompany.AuthPlatform.Application;
 using System.Security.Claims;
+using MyCompany.AuthPlatform.Application;
 
 namespace MyCompany.AuthPlatform.Api;
 
@@ -24,7 +24,7 @@ internal static class ApiExecution
 
     private static AdminAccessContext ResolveAccessContext(HttpContext httpContext)
     {
-        var roleValue = httpContext.User.FindFirstValue(DemoAuthenticationDefaults.RoleClaimType)
+        var roleValue = httpContext.User.FindFirstValue(AdminAccessDefaults.LocalRoleClaimType)
             ?? throw new ApplicationServiceException(401, "authentication_required", "An authenticated admin context is required.");
         if (!Enum.TryParse<AdminAccessRole>(roleValue, ignoreCase: true, out var role))
         {
@@ -37,7 +37,7 @@ internal static class ApiExecution
             actor = $"demo.{role.ToString().ToLowerInvariant()}";
         }
 
-        var correlationId = httpContext.Request.Headers[DemoAuthenticationDefaults.CorrelationIdHeaderName].ToString();
+        var correlationId = httpContext.Request.Headers[AdminAccessDefaults.CorrelationIdHeaderName].ToString();
         if (string.IsNullOrWhiteSpace(correlationId))
         {
             correlationId = $"demo-{Guid.NewGuid():N}";

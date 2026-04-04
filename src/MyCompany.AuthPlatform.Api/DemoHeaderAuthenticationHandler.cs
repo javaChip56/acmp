@@ -36,7 +36,7 @@ internal sealed class DemoHeaderAuthenticationHandler : AuthenticationHandler<Au
             new Claim(ClaimTypes.Name, actor),
             new Claim(ClaimTypes.NameIdentifier, actor),
             new Claim(ClaimTypes.Role, role.Value.ToString()),
-            new Claim(DemoAuthenticationDefaults.RoleClaimType, role.Value.ToString()),
+            new Claim(AdminAccessDefaults.LocalRoleClaimType, role.Value.ToString()),
         };
 
         var identity = new ClaimsIdentity(claims, DemoAuthenticationDefaults.AuthenticationScheme);

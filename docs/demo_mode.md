@@ -15,6 +15,7 @@ The current default configuration uses:
 
 - `Persistence:Provider = InMemoryDemo`
 - `DemoMode:SeedOnStartup = true`
+- `Authentication:Mode = DemoHeader`
 
 ## What Demo Mode Does
 
@@ -54,3 +55,4 @@ If `X-Demo-Role` is omitted, the demo host authenticates the request as `AccessV
 - This is a demo host, not the full production host.
 - The in-memory provider is intended for demonstrations only.
 - Production-grade identity integration is not implemented yet; the current host uses demo headers as the authentication source for development and demos.
+- To switch the same host to a real identity provider, set `Authentication:Mode = JwtBearer` and configure the `Authentication:JwtBearer` section described in [identity_provider_setup.md](d:/Research/acmp/docs/identity_provider_setup.md).

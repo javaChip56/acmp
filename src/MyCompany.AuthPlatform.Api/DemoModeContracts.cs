@@ -9,6 +9,7 @@ public sealed record DemoSystemInfoResponse(
     string Mode,
     string PersistenceProvider,
     bool SeedOnStartup,
+    string AuthenticationMode,
     IReadOnlyList<string> Notes,
     IReadOnlyList<string> SupportedRoles);
 
