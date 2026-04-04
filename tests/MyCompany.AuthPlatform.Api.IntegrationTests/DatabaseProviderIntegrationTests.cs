@@ -1,0 +1,190 @@
+using System.Net.Http.Json;
+using System.Net.Http.Headers;
+using System.Text.Json.Nodes;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
+using Npgsql;
+using Xunit;
+
+namespace MyCompany.AuthPlatform.Api.IntegrationTests;
+
+public sealed class DatabaseProviderIntegrationTests
+{
+    [Fact]
+    [Trait("Category", "SqlServer")]
+    public async Task SqlServer_HostStartsAndServesSeededData()
+    {
+        if (!DatabaseIntegrationSettings.ShouldRun)
+        {
+            return;
+        }
+
+        var masterConnectionString = DatabaseIntegrationSettings.GetRequired("SQLSERVER_TEST_CONNECTION_STRING");
+        var databaseName = $"acmp_sql_{Guid.NewGuid():N}";
+        var connectionString = BuildSqlServerConnectionString(masterConnectionString, databaseName);
+
+        using var factory = new ConfiguredApiFactory(new Dictionary<string, string?>
+        {
+            ["Persistence:Provider"] = "SqlServer",
+            ["Persistence:SqlServer:ConnectionString"] = connectionString,
+            ["Persistence:SqlServer:ApplyMigrationsOnStartup"] = "true",
+            ["DemoMode:SeedOnStartup"] = "true"
+        });
+
+        using var client = factory.CreateClient();
+        var token = await IssueAdminTokenAsync(client);
+
+        var health = await client.GetFromJsonAsync<JsonObject>("/health");
+        var usersResponse = await SendAuthorizedGetAsync(client, "/api/admin/users", token);
+        var clientsResponse = await SendAuthorizedGetAsync(client, "/api/clients", token);
+
+        usersResponse.EnsureSuccessStatusCode();
+        clientsResponse.EnsureSuccessStatusCode();
+
+        var users = await usersResponse.Content.ReadFromJsonAsync<JsonArray>();
+        var clients = await clientsResponse.Content.ReadFromJsonAsync<JsonArray>();
+
+        Assert.Equal("SqlServer", health?["persistenceProvider"]?.GetValue<string>());
+        Assert.NotNull(users);
+        Assert.NotNull(clients);
+        Assert.True(users!.Count >= 3);
+        Assert.True(clients!.Count >= 2);
+    }
+
+    [Fact]
+    [Trait("Category", "Postgres")]
+    public async Task Postgres_HostStartsAndServesSeededData()
+    {
+        if (!DatabaseIntegrationSettings.ShouldRun)
+        {
+            return;
+        }
+
+        var adminConnectionString = DatabaseIntegrationSettings.GetRequired("POSTGRES_ADMIN_CONNECTION_STRING");
+        var databaseName = $"acmp_pg_{Guid.NewGuid():N}";
+        await CreatePostgresDatabaseAsync(adminConnectionString, databaseName);
+
+        var connectionString = BuildPostgresConnectionString(adminConnectionString, databaseName);
+
+        using var factory = new ConfiguredApiFactory(new Dictionary<string, string?>
+        {
+            ["Persistence:Provider"] = "Postgres",
+            ["Persistence:Postgres:ConnectionString"] = connectionString,
+            ["Persistence:Postgres:ApplyMigrationsOnStartup"] = "true",
+            ["DemoMode:SeedOnStartup"] = "true"
+        });
+
+        using var client = factory.CreateClient();
+        var token = await IssueAdminTokenAsync(client);
+
+        var health = await client.GetFromJsonAsync<JsonObject>("/health");
+        var usersResponse = await SendAuthorizedGetAsync(client, "/api/admin/users", token);
+        var clientsResponse = await SendAuthorizedGetAsync(client, "/api/clients", token);
+
+        usersResponse.EnsureSuccessStatusCode();
+        clientsResponse.EnsureSuccessStatusCode();
+
+        var users = await usersResponse.Content.ReadFromJsonAsync<JsonArray>();
+        var clients = await clientsResponse.Content.ReadFromJsonAsync<JsonArray>();
+
+        Assert.Equal("Postgres", health?["persistenceProvider"]?.GetValue<string>());
+        Assert.NotNull(users);
+        Assert.NotNull(clients);
+        Assert.True(users!.Count >= 3);
+        Assert.True(clients!.Count >= 2);
+    }
+
+    private static async Task<string> IssueAdminTokenAsync(HttpClient client)
+    {
+        var response = await client.PostAsJsonAsync("/api/auth/token", new
+        {
+            username = "administrator.demo",
+            password = "AdministratorPass!123"
+        });
+
+        response.EnsureSuccessStatusCode();
+        var payload = await response.Content.ReadFromJsonAsync<JsonObject>();
+        return payload?["accessToken"]?.GetValue<string>()
+            ?? throw new InvalidOperationException("Access token was not returned by the API.");
+    }
+
+    private static Task<HttpResponseMessage> SendAuthorizedGetAsync(HttpClient client, string path, string token)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return client.SendAsync(request);
+    }
+
+    private static async Task CreatePostgresDatabaseAsync(string adminConnectionString, string databaseName)
+    {
+        await using var connection = new NpgsqlConnection(adminConnectionString);
+        await connection.OpenAsync();
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"CREATE DATABASE \"{databaseName}\"";
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static string BuildSqlServerConnectionString(string masterConnectionString, string databaseName)
+    {
+        var builder = new SqlConnectionStringBuilder(masterConnectionString)
+        {
+            InitialCatalog = databaseName,
+            Encrypt = false,
+            TrustServerCertificate = true
+        };
+
+        return builder.ConnectionString;
+    }
+
+    private static string BuildPostgresConnectionString(string adminConnectionString, string databaseName)
+    {
+        var builder = new NpgsqlConnectionStringBuilder(adminConnectionString)
+        {
+            Database = databaseName
+        };
+
+        return builder.ConnectionString;
+    }
+
+    private sealed class ConfiguredApiFactory : WebApplicationFactory<Program>
+    {
+        private readonly IEnumerable<KeyValuePair<string, string?>> _overrides;
+
+        public ConfiguredApiFactory(IEnumerable<KeyValuePair<string, string?>> overrides)
+        {
+            _overrides = overrides;
+        }
+
+        protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
+        {
+            builder.UseEnvironment("Development");
+            builder.ConfigureAppConfiguration((_, configBuilder) =>
+            {
+                configBuilder.AddInMemoryCollection(_overrides);
+            });
+        }
+    }
+
+    private static class DatabaseIntegrationSettings
+    {
+        public static bool ShouldRun =>
+            string.Equals(
+                Environment.GetEnvironmentVariable("RUN_DATABASE_INTEGRATION_TESTS"),
+                "true",
+                StringComparison.OrdinalIgnoreCase);
+
+        public static string GetRequired(string name)
+        {
+            var value = Environment.GetEnvironmentVariable(name);
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                throw new InvalidOperationException($"Environment variable '{name}' must be configured for database integration tests.");
+            }
+
+            return value;
+        }
+    }
+}

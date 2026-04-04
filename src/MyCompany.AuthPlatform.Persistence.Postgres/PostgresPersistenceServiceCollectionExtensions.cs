@@ -33,7 +33,7 @@ public static class PostgresPersistenceServiceCollectionExtensions
             options.UseNpgsql(settings.ConnectionString);
         });
 
-        services.AddScoped<IAuthPlatformUnitOfWork, PostgresAuthPlatformUnitOfWork>();
+        services.AddScoped<PostgresAuthPlatformUnitOfWork>();
         return services;
     }
 

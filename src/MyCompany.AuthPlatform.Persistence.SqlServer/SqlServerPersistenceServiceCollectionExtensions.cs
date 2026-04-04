@@ -33,7 +33,7 @@ public static class SqlServerPersistenceServiceCollectionExtensions
             options.UseSqlServer(settings.ConnectionString);
         });
 
-        services.AddScoped<IAuthPlatformUnitOfWork, SqlServerAuthPlatformUnitOfWork>();
+        services.AddScoped<SqlServerAuthPlatformUnitOfWork>();
         return services;
     }
 

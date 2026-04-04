@@ -67,3 +67,120 @@ jobs:
           name: test-results
           path: artifacts/test-results
           if-no-files-found: error
+
+  integration-tests-sqlserver:
+    name: Integration Tests (SQL Server)
+    runs-on: ubuntu-latest
+    needs: tests
+
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          SA_PASSWORD: Your_strong_Passw0rd!
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "bash -c '</dev/tcp/127.0.0.1/1433'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      RUN_DATABASE_INTEGRATION_TESTS: true
+      SQLSERVER_TEST_CONNECTION_STRING: Server=127.0.0.1,1433;Database=master;User Id=sa;Password=Your_strong_Passw0rd!;TrustServerCertificate=True;Encrypt=False
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Wait for SQL Server
+        shell: bash
+        run: |
+          for i in {1..60}; do
+            if (echo > /dev/tcp/127.0.0.1/1433) >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "SQL Server service did not become ready in time."
+          exit 1
+
+      - name: Restore
+        run: dotnet restore ./Acmp.sln
+
+      - name: Run SQL Server integration tests
+        run: dotnet test ./tests/MyCompany.AuthPlatform.Api.IntegrationTests/MyCompany.AuthPlatform.Api.IntegrationTests.csproj --configuration Release --filter "Category=SqlServer" --logger "trx;LogFileName=sqlserver-integration.trx" --results-directory ./artifacts/sqlserver-integration
+
+      - name: Upload SQL Server integration results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sqlserver-integration-results
+          path: artifacts/sqlserver-integration
+          if-no-files-found: error
+
+  integration-tests-postgres:
+    name: Integration Tests (PostgreSQL)
+    runs-on: ubuntu-latest
+    needs: tests
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      RUN_DATABASE_INTEGRATION_TESTS: true
+      POSTGRES_ADMIN_CONNECTION_STRING: Host=127.0.0.1;Port=5432;Database=postgres;Username=postgres;Password=postgres
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Wait for PostgreSQL
+        shell: bash
+        run: |
+          for i in {1..60}; do
+            if pg_isready -h 127.0.0.1 -p 5432 -U postgres >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "PostgreSQL service did not become ready in time."
+          exit 1
+
+      - name: Restore
+        run: dotnet restore ./Acmp.sln
+
+      - name: Run PostgreSQL integration tests
+        run: dotnet test ./tests/MyCompany.AuthPlatform.Api.IntegrationTests/MyCompany.AuthPlatform.Api.IntegrationTests.csproj --configuration Release --filter "Category=Postgres" --logger "trx;LogFileName=postgres-integration.trx" --results-directory ./artifacts/postgres-integration
+
+      - name: Upload PostgreSQL integration results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-integration-results
+          path: artifacts/postgres-integration
+          if-no-files-found: error

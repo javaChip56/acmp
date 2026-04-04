@@ -110,6 +110,8 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 builder.Services.AddSingleton<InMemoryPersistenceState>();
+builder.Services.AddAuthPlatformSqlServerPersistence(builder.Configuration);
+builder.Services.AddAuthPlatformPostgresPersistence(builder.Configuration);
 builder.Services.AddScoped<IAuthPlatformUnitOfWork>(serviceProvider =>
 {
     var persistenceOptions = serviceProvider.GetRequiredService<IOptions<PersistenceOptions>>().Value;
@@ -118,19 +120,20 @@ builder.Services.AddScoped<IAuthPlatformUnitOfWork>(serviceProvider =>
         return new InMemoryAuthPlatformUnitOfWork(serviceProvider.GetRequiredService<InMemoryPersistenceState>());
     }
 
+    if (string.Equals(persistenceOptions.Provider, PersistenceOptions.SqlServerProvider, StringComparison.OrdinalIgnoreCase))
+    {
+        return serviceProvider.GetRequiredService<SqlServerAuthPlatformUnitOfWork>();
+    }
+
+    if (string.Equals(persistenceOptions.Provider, PersistenceOptions.PostgresProvider, StringComparison.OrdinalIgnoreCase))
+    {
+        return serviceProvider.GetRequiredService<PostgresAuthPlatformUnitOfWork>();
+    }
+
     throw new InvalidOperationException(
         $"Persistence provider '{persistenceOptions.Provider}' is not implemented. " +
         $"Use '{PersistenceOptions.InMemoryDemoProvider}', '{PersistenceOptions.SqlServerProvider}', or '{PersistenceOptions.PostgresProvider}'.");
 });
-
-if (string.Equals(builder.Configuration[$"{PersistenceOptions.SectionName}:Provider"], PersistenceOptions.SqlServerProvider, StringComparison.OrdinalIgnoreCase))
-{
-    builder.Services.AddAuthPlatformSqlServerPersistence(builder.Configuration);
-}
-else if (string.Equals(builder.Configuration[$"{PersistenceOptions.SectionName}:Provider"], PersistenceOptions.PostgresProvider, StringComparison.OrdinalIgnoreCase))
-{
-    builder.Services.AddAuthPlatformPostgresPersistence(builder.Configuration);
-}
 
 builder.Services.AddScoped<DemoDataSeeder>();
 builder.Services.AddScoped<AuthPlatformApplicationService>();
@@ -492,4 +495,8 @@ static void ConfigureBearerErrorResponses(JwtBearerOptions options, string chall
                 "The authenticated identity is not permitted to perform this action."));
         },
     };
+}
+
+public partial class Program
+{
 }
