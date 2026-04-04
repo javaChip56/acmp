@@ -656,12 +656,27 @@ Reserved for future replay protection persistence.
 
 ## 13.0 API Design
 
-### 13.1 Management APIs
+### 13.1 API Conventions
+The management API should use JSON request and response bodies encoded as UTF-8.
+
+Recommended initial conventions:
+
+- use `application/json` for request and response payloads
+- use `camelCase` for JSON property names
+- use ISO 8601 UTC timestamps in the format `yyyy-MM-ddTHH:mm:ssZ`
+- use stable string enums for externally visible values such as credential status and authentication mode
+- use `id` values as opaque identifiers rather than client-derived meaning
+- include a correlation identifier header such as `X-Correlation-Id` when available
+
+### 13.2 Management APIs
 Suggested initial endpoints:
 
 - POST /api/clients
 - PUT /api/clients/{clientId}
+- POST /api/clients/{clientId}/disable
 - POST /api/clients/{clientId}/credentials/hmac
+- PUT /api/credentials/{credentialId}
+- POST /api/credentials/{credentialId}/disable
 - POST /api/credentials/{credentialId}/rotate
 - POST /api/credentials/{credentialId}/revoke
 - POST /api/credentials/{credentialId}/issue-encrypted-package
@@ -669,13 +684,257 @@ Suggested initial endpoints:
 - GET /api/clients/{clientId}/credentials
 - GET /api/audit
 
-### 13.2 Protected Business APIs
+### 13.3 Example DTOs
+
+#### 13.3.1 Create Client Request
+
+```json
+{
+  "clientCode": "orders-api",
+  "clientName": "Orders API",
+  "owner": "Integration Team",
+  "environment": "UAT",
+  "description": "Internal order-processing API",
+  "metadata": {
+    "businessUnit": "Operations",
+    "contactEmail": "orders-team@example.internal"
+  }
+}
+```
+
+Validation notes:
+
+- `clientCode` should be unique within an environment
+- `environment` should be one of `DEV`, `TEST`, `UAT`, or `PROD`
+- `owner` should capture the accountable support team or function
+
+#### 13.3.2 Create Client Response
+
+```json
+{
+  "clientId": "c-1001",
+  "clientCode": "orders-api",
+  "clientName": "Orders API",
+  "owner": "Integration Team",
+  "environment": "UAT",
+  "status": "Active",
+  "description": "Internal order-processing API",
+  "metadata": {
+    "businessUnit": "Operations",
+    "contactEmail": "orders-team@example.internal"
+  },
+  "createdAt": "2026-04-04T09:30:00Z",
+  "createdBy": "admin.user"
+}
+```
+
+#### 13.3.3 Update Client Request
+
+```json
+{
+  "clientName": "Orders API",
+  "owner": "Integration Platform Team",
+  "description": "Internal order-processing API for service-to-service calls",
+  "metadata": {
+    "businessUnit": "Operations",
+    "contactEmail": "integration-platform@example.internal"
+  }
+}
+```
+
+#### 13.3.4 Issue HMAC Credential Request
+
+```json
+{
+  "expiresAt": "2027-04-01T00:00:00Z",
+  "scopes": [
+    "orders.read",
+    "orders.write"
+  ],
+  "issueEncryptedValidationPackage": true,
+  "issueEncryptedClientPackage": false,
+  "hmacAlgorithm": "HMACSHA256",
+  "notes": "Primary UAT credential"
+}
+```
+
+Validation notes:
+
+- `scopes` should contain unique values
+- `expiresAt` should be in the future when supplied
+- `hmacAlgorithm` should initially allow only `HMACSHA256`
+
+#### 13.3.5 Issue HMAC Credential Response
+
+```json
+{
+  "clientId": "c-1001",
+  "credentialId": "cred-2001",
+  "authenticationMode": "HMAC",
+  "status": "Active",
+  "keyId": "key-uat-001",
+  "keyVersion": "kms-v1",
+  "secret": "base64-secret-value",
+  "shownOnce": true,
+  "scopes": [
+    "orders.read",
+    "orders.write"
+  ],
+  "expiresAt": "2027-04-01T00:00:00Z",
+  "issuedAt": "2026-04-04T10:00:00Z"
+}
+```
+
+The `secret` field is returned only during issuance and shall not be returned by later read or list operations.
+
+#### 13.3.6 Update Credential Request
+
+```json
+{
+  "status": "Active",
+  "expiresAt": "2027-06-30T00:00:00Z",
+  "scopes": [
+    "orders.read"
+  ],
+  "reason": "Scope reduction after access review"
+}
+```
+
+#### 13.3.7 Rotate Credential Request
+
+```json
+{
+  "expiresAt": "2027-10-01T00:00:00Z",
+  "issueEncryptedValidationPackage": true,
+  "issueEncryptedClientPackage": true,
+  "reason": "Scheduled quarterly rotation"
+}
+```
+
+#### 13.3.8 Revoke Credential Request
+
+```json
+{
+  "reason": "Suspected credential exposure"
+}
+```
+
+#### 13.3.9 Encrypted Package Issuance Response
+
+```json
+{
+  "credentialId": "cred-2001",
+  "keyId": "key-uat-001",
+  "packageType": "ServiceValidation",
+  "fileName": "key-uat-001.validation.acmp",
+  "contentType": "application/octet-stream",
+  "issuedAt": "2026-04-04T10:05:00Z",
+  "keyVersion": "kms-v1"
+}
+```
+
+For browser-based admin workflows, the binary file may be returned as a download stream with metadata reflected in response headers.
+
+#### 13.3.10 Credential Metadata List Response
+
+```json
+{
+  "clientId": "c-1001",
+  "items": [
+    {
+      "credentialId": "cred-2001",
+      "authenticationMode": "HMAC",
+      "status": "Active",
+      "keyId": "key-uat-001",
+      "keyVersion": "kms-v1",
+      "scopes": [
+        "orders.read",
+        "orders.write"
+      ],
+      "expiresAt": "2027-04-01T00:00:00Z",
+      "revokedAt": null,
+      "updatedAt": "2026-04-04T10:00:00Z"
+    }
+  ],
+  "page": 1,
+  "pageSize": 50,
+  "totalCount": 1
+}
+```
+
+List operations shall not include plaintext secret values.
+
+#### 13.3.11 Audit List Response
+
+```json
+{
+  "items": [
+    {
+      "auditId": "aud-9001",
+      "timestamp": "2026-04-04T10:00:00Z",
+      "actor": "admin.user",
+      "action": "CredentialIssued",
+      "targetType": "Credential",
+      "targetId": "cred-2001",
+      "reason": "Primary UAT credential",
+      "environment": "UAT"
+    }
+  ],
+  "page": 1,
+  "pageSize": 100,
+  "totalCount": 1
+}
+```
+
+### 13.4 Error Model
+Management APIs should return structured error responses for validation, authorization, state, and infrastructure failures.
+
+Recommended error payload:
+
+```json
+{
+  "errorCode": "credential_not_found",
+  "message": "The specified credential could not be found.",
+  "correlationId": "3f5d8e4b2dfc4f2d8c4d511e4ab2ab0a",
+  "details": [
+    {
+      "field": "credentialId",
+      "issue": "No matching credential exists."
+    }
+  ]
+}
+```
+
+Recommended initial error codes:
+
+| HTTP Status | Error Code | Meaning |
+|---|---|---|
+| 400 | `invalid_request` | Request payload or parameters are malformed. |
+| 400 | `invalid_timestamp_format` | Timestamp value does not match the required UTC format. |
+| 400 | `invalid_scope_assignment` | Scope list is empty, duplicated, or contains unsupported values. |
+| 401 | `admin_authentication_required` | Caller is not authenticated to use the management API. |
+| 403 | `admin_access_denied` | Caller is authenticated but lacks required administrative permission. |
+| 404 | `client_not_found` | Requested client record does not exist. |
+| 404 | `credential_not_found` | Requested credential does not exist. |
+| 409 | `client_code_conflict` | A client with the same code already exists in the target environment. |
+| 409 | `credential_state_conflict` | Requested lifecycle operation is not valid for the current credential state. |
+| 409 | `key_id_conflict` | Generated or supplied `KeyId` conflicts with an existing credential. |
+| 422 | `unsupported_authentication_mode` | Requested authentication mode is not enabled in the current release. |
+| 422 | `unsupported_hmac_algorithm` | Requested HMAC algorithm is not supported. |
+| 422 | `credential_expiry_invalid` | Credential expiry value violates policy. |
+| 500 | `kms_operation_failed` | Secret generation, encryption, or decryption failed. |
+| 500 | `package_issuance_failed` | Encrypted package could not be created or streamed securely. |
+| 503 | `persistence_unavailable` | Required database or persistence dependency is unavailable. |
+
+The API should avoid leaking sensitive internal details in error messages. Detailed diagnostics may be written to protected logs with the correlation identifier.
+
+### 13.5 Protected Business APIs
 Business APIs shall use HMAC authentication middleware rather than exposing a separate validation endpoint.
 
-### 13.3 Client Signing Integration
+### 13.6 Client Signing Integration
 Client services may use the client-side HMAC signing library rather than implementing canonical string construction and header generation directly.
 
-### 13.4 Example HMAC Issue Response
+### 13.7 Example HMAC Issue Response
 
 ```json
 {
