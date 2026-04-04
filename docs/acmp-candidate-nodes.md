@@ -14,7 +14,10 @@ Based only on the current requirements baseline, FRS, and technical specificatio
 | Protected Recipient Service | `service` | Internal protected service or business API that validates inbound HMAC requests and enforces credential scope/permission checks. |
 | Client Service | `service` | Internal client service that signs outbound HMAC requests when calling protected services. |
 | MiniKMS | `service` | Internal cryptographic component used for HMAC secret generation, envelope encryption, decryption, and key versioning. |
-| Credential Persistence Store | `database` | SQL Server, PostgreSQL, or demo in-memory store holding service/client records, credential metadata, HMAC detail records, admin users, admin role assignments, and audit data. |
+| Credential Persistence Store | `database` | SQL Server, PostgreSQL, or demo in-memory persistence layer that contains the platform's logical data stores. |
+| Credential Record Store | `data-asset` | Logical data store for service/client records, credential metadata, scopes, and HMAC detail records. |
+| Administrative Identity Store | `data-asset` | Logical data store for persisted admin users, password material, login metadata, and admin role assignments. |
+| Audit Event Store | `data-asset` | Logical data store for administrative and security audit events. |
 | Encrypted Credential Package | `data-asset` | Versioned encrypted JSON package artifact issued per `KeyId` for recipient-side HMAC validation in `EncryptedFile` mode and bound to an approved X.509 protection context. |
 | Encrypted Client Credential Package | `data-asset` | Versioned encrypted JSON package artifact issued per `KeyId` for client-side outbound HMAC signing and bound to an approved X.509 protection context. |
 
@@ -29,15 +32,19 @@ These relationships are also based only on the current requirements baseline, FR
 | AccessAdministrator -> Admin Web Portal | `interacts` | AccessAdministrator users use the internal admin portal for elevated administrative operations and audit access. |
 | Admin Web Portal -> Credential Management API | `connects` | The admin portal uses the management API for administrative user management, client registration, credential lifecycle actions, package issuance, and audit-related operations. |
 | Admin Web Portal -> Embedded Identity Provider | `connects` | The admin portal submits embedded sign-in requests to the local identity component and receives bearer tokens for later management API calls. |
-| Embedded Identity Provider -> Credential Persistence Store | `connects` | The embedded identity component reads persisted admin users, password hashes, and role assignments from the platform data store and updates login metadata. |
-| Credential Management API -> Credential Persistence Store | `connects` | The management API persists and reads service/client records, credential metadata, HMAC details, admin users, admin role assignments, and audit data from the platform data store. |
+| Embedded Identity Provider -> Administrative Identity Store | `connects` | The embedded identity component reads persisted admin users, password hashes, and role assignments from the admin identity store and updates login metadata. |
+| Credential Management API -> Credential Record Store | `connects` | The management API persists and reads service/client records, credential metadata, scopes, and HMAC details from the credential record store. |
+| Credential Management API -> Administrative Identity Store | `connects` | The management API persists and reads administrative users, password material, and admin role assignments from the administrative identity store. |
+| Credential Management API -> Audit Event Store | `connects` | The management API persists and reads audit events from the audit event store. |
 | Credential Management API -> MiniKMS | `connects` | The management API uses MiniKMS for HMAC secret generation, encryption, decryption, and related key-management operations. |
 | Credential Management API -> Encrypted Credential Package | `connects` | The management API issues versioned recipient-side encrypted package envelopes for service-side validation scenarios. |
 | Credential Management API -> Encrypted Client Credential Package | `connects` | The management API issues versioned client-side encrypted package envelopes for outbound signing scenarios. |
 | Client Service -> Protected Recipient Service | `connects` | Client services send HMAC-signed outbound requests to protected recipient services. |
+| Protected Recipient Service -> Credential Record Store | `connects` | In `KmsBacked` mode, recipient-side validation resolves credential metadata and HMAC detail records from the credential record store on cache miss or refresh. |
 | Protected Recipient Service -> Encrypted Credential Package | `connects` | In `EncryptedFile` mode, recipient-side validation loads, decrypts, and validates a bound encrypted package envelope from an accessible service directory. |
 | Client Service -> Encrypted Client Credential Package | `connects` | The client-side signing library loads, decrypts, and validates a bound encrypted package envelope to sign outbound requests. |
 | Authentication Credential Management Platform -> Admin Web Portal, Credential Management API, Embedded Identity Provider | `composed-of` | At the shared platform level, the platform includes the admin portal, management API, and embedded identity component. |
+| Credential Persistence Store -> Credential Record Store, Administrative Identity Store, Audit Event Store | `composed-of` | The physical persistence layer contains separate logical stores for credential data, administrative identity data, and audit events. |
 | Authentication Credential Management Platform -> HMAC Provider Components | `composed-of` | At the HMAC provider level, the platform includes HMAC issuance, package issuance, signing, validation, and supporting runtime components. |
 
 ## Candidate CALM Flows
@@ -71,51 +78,56 @@ These flows represent business actions described by the current requirements bas
 #### Authenticate Administrative User
 1. Access user -> Admin Web Portal
 2. Admin Web Portal -> Embedded Identity Provider
-3. Embedded Identity Provider -> Credential Persistence Store
+3. Embedded Identity Provider -> Administrative Identity Store
 4. Embedded Identity Provider -> Admin Web Portal with bearer token
 
 #### Manage Administrative Users
 1. AccessAdministrator -> Admin Web Portal
 2. Admin Web Portal -> Credential Management API
-3. Credential Management API -> Credential Persistence Store
+3. Credential Management API -> Administrative Identity Store
+4. Credential Management API -> Audit Event Store
 
 #### Register Client Service
 1. AccessAdministrator -> Admin Web Portal
 2. Admin Web Portal -> Credential Management API
-3. Credential Management API -> Credential Persistence Store
+3. Credential Management API -> Credential Record Store
 
 #### Update Client Service
 1. AccessAdministrator -> Admin Web Portal
 2. Admin Web Portal -> Credential Management API
-3. Credential Management API -> Credential Persistence Store
+3. Credential Management API -> Credential Record Store
 
 #### Disable Client Service
 1. AccessAdministrator -> Admin Web Portal
 2. Admin Web Portal -> Credential Management API
-3. Credential Management API -> Credential Persistence Store
+3. Credential Management API -> Credential Record Store
 
 #### Issue HMAC Credential
 1. AccessOperator -> Admin Web Portal
 2. Admin Web Portal -> Credential Management API
 3. Credential Management API -> MiniKMS
-4. Credential Management API -> Credential Persistence Store
+4. Credential Management API -> Credential Record Store
+5. Credential Management API -> Audit Event Store
 
 #### Rotate HMAC Credential (Standard)
 1. AccessOperator -> Admin Web Portal
 2. Admin Web Portal -> Credential Management API
 3. Credential Management API -> MiniKMS
-4. Credential Management API -> Credential Persistence Store
+4. Credential Management API -> Credential Record Store
+5. Credential Management API -> Audit Event Store
 
 #### Rotate HMAC Credential (Extended Grace)
 1. AccessAdministrator -> Admin Web Portal
 2. Admin Web Portal -> Credential Management API
 3. Credential Management API -> MiniKMS
-4. Credential Management API -> Credential Persistence Store
+4. Credential Management API -> Credential Record Store
+5. Credential Management API -> Audit Event Store
 
 #### Revoke HMAC Credential
 1. AccessOperator -> Admin Web Portal
 2. Admin Web Portal -> Credential Management API
-3. Credential Management API -> Credential Persistence Store
+3. Credential Management API -> Credential Record Store
+4. Credential Management API -> Audit Event Store
 
 #### Issue Encrypted Credential Package
 1. AccessOperator -> Admin Web Portal
@@ -130,7 +142,7 @@ These flows represent business actions described by the current requirements bas
 #### Validate Inbound HMAC Request (KmsBacked)
 1. Client Service -> Protected Recipient Service
 2. Protected Recipient Service -> platform or KMS-backed credential resolution path
-3. Platform credential resolution path -> Credential Persistence Store
+3. Platform credential resolution path -> Credential Record Store
 4. Platform credential resolution path -> MiniKMS
 5. Protected Recipient Service -> authorization decision
 
@@ -160,9 +172,9 @@ These flows represent business actions described by the current requirements bas
 #### List Credential Metadata
 1. AccessViewer -> Admin Web Portal
 2. Admin Web Portal -> Credential Management API
-3. Credential Management API -> Credential Persistence Store
+3. Credential Management API -> Credential Record Store
 
 #### View Audit Log
 1. AccessAdministrator -> Admin Web Portal
 2. Admin Web Portal -> Credential Management API
-3. Credential Management API -> Credential Persistence Store
+3. Credential Management API -> Audit Event Store

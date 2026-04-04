@@ -68,7 +68,25 @@
       "unique-id": "credential-persistence-store",
       "node-type": "database",
       "name": "Credential Persistence Store",
-      "description": "SQL Server, PostgreSQL, or demo in-memory store holding service and client records, credential metadata, HMAC detail records, persisted admin users, admin role assignments, and audit data."
+      "description": "SQL Server, PostgreSQL, or demo in-memory persistence layer that contains the platform's logical data stores."
+    },
+    {
+      "unique-id": "credential-record-store",
+      "node-type": "data-asset",
+      "name": "Credential Record Store",
+      "description": "Logical data store for service or client records, credential metadata, scopes, and HMAC detail records."
+    },
+    {
+      "unique-id": "administrative-identity-store",
+      "node-type": "data-asset",
+      "name": "Administrative Identity Store",
+      "description": "Logical data store for persisted admin users, password material, login metadata, and admin role assignments."
+    },
+    {
+      "unique-id": "audit-event-store",
+      "node-type": "data-asset",
+      "name": "Audit Event Store",
+      "description": "Logical data store for administrative and security audit events."
     },
     {
       "unique-id": "encrypted-credential-package",
@@ -151,29 +169,57 @@
       "protocol": "HTTPS"
     },
     {
-      "unique-id": "management-api-to-persistence-store",
-      "description": "Reads and persists client, credential, admin-user, and audit data in",
+      "unique-id": "management-api-to-credential-record-store",
+      "description": "Reads and persists service, client, credential, scope, and HMAC detail records in",
       "relationship-type": {
         "connects": {
           "source": {
             "node": "credential-management-api"
           },
           "destination": {
-            "node": "credential-persistence-store"
+            "node": "credential-record-store"
           }
         }
       }
     },
     {
-      "unique-id": "embedded-identity-provider-to-persistence-store",
-      "description": "Reads persisted administrative users and role assignments from",
+      "unique-id": "embedded-identity-provider-to-administrative-identity-store",
+      "description": "Reads persisted administrative users, password material, and role assignments from",
       "relationship-type": {
         "connects": {
           "source": {
             "node": "embedded-identity-provider"
           },
           "destination": {
-            "node": "credential-persistence-store"
+            "node": "administrative-identity-store"
+          }
+        }
+      }
+    },
+    {
+      "unique-id": "management-api-to-administrative-identity-store",
+      "description": "Reads and persists administrative users, password material, and role assignments in",
+      "relationship-type": {
+        "connects": {
+          "source": {
+            "node": "credential-management-api"
+          },
+          "destination": {
+            "node": "administrative-identity-store"
+          }
+        }
+      }
+    },
+    {
+      "unique-id": "management-api-to-audit-event-store",
+      "description": "Reads and persists administrative and security audit events in",
+      "relationship-type": {
+        "connects": {
+          "source": {
+            "node": "credential-management-api"
+          },
+          "destination": {
+            "node": "audit-event-store"
           }
         }
       }
@@ -221,7 +267,7 @@
       }
     },
     {
-      "unique-id": "protected-recipient-service-to-persistence-store",
+      "unique-id": "protected-recipient-service-to-credential-record-store",
       "description": "Resolves credential metadata from",
       "relationship-type": {
         "connects": {
@@ -229,7 +275,7 @@
             "node": "protected-recipient-service"
           },
           "destination": {
-            "node": "credential-persistence-store"
+            "node": "credential-record-store"
           }
         }
       }
@@ -306,6 +352,20 @@
       }
     },
     {
+      "unique-id": "persistence-store-composed-of-logical-stores",
+      "description": "Contains logical internal data stores",
+      "relationship-type": {
+        "composed-of": {
+          "container": "credential-persistence-store",
+          "nodes": [
+            "credential-record-store",
+            "administrative-identity-store",
+            "audit-event-store"
+          ]
+        }
+      }
+    },
+    {
       "unique-id": "platform-composed-of-hmac-supporting-components",
       "description": "Includes HMAC-related supporting components and issued artifacts",
       "relationship-type": {
@@ -337,7 +397,7 @@
           "description": "Admin portal submits local username and password credentials to the embedded identity provider."
         },
         {
-          "relationship-unique-id": "embedded-identity-provider-to-persistence-store",
+          "relationship-unique-id": "embedded-identity-provider-to-administrative-identity-store",
           "sequence-number": 3,
           "description": "Embedded identity provider loads persisted admin-user records, password hashes, and role assignments and updates login metadata."
         }
@@ -359,9 +419,14 @@
           "description": "Admin portal submits create, update, disable, password-reset, or role-assignment requests to the credential management API."
         },
         {
-          "relationship-unique-id": "management-api-to-persistence-store",
+          "relationship-unique-id": "management-api-to-administrative-identity-store",
           "sequence-number": 3,
-          "description": "Credential management API persists administrative user records, password material, role assignments, and related audit metadata."
+          "description": "Credential management API persists administrative user records, password material, and role assignments."
+        },
+        {
+          "relationship-unique-id": "management-api-to-audit-event-store",
+          "sequence-number": 4,
+          "description": "Credential management API records the administrative user-management audit event."
         }
       ]
     },
@@ -381,7 +446,7 @@
           "description": "Admin portal submits the create client request to the credential management API."
         },
         {
-          "relationship-unique-id": "management-api-to-persistence-store",
+          "relationship-unique-id": "management-api-to-credential-record-store",
           "sequence-number": 3,
           "description": "Credential management API stores the new client or service record."
         }
@@ -403,7 +468,7 @@
           "description": "Admin portal submits the metadata update request to the credential management API."
         },
         {
-          "relationship-unique-id": "management-api-to-persistence-store",
+          "relationship-unique-id": "management-api-to-credential-record-store",
           "sequence-number": 3,
           "description": "Credential management API persists the updated client or service metadata."
         }
@@ -425,7 +490,7 @@
           "description": "Admin portal submits the disable request to the credential management API."
         },
         {
-          "relationship-unique-id": "management-api-to-persistence-store",
+          "relationship-unique-id": "management-api-to-credential-record-store",
           "sequence-number": 3,
           "description": "Credential management API updates persisted client or service status to disabled."
         }
@@ -452,9 +517,14 @@
           "description": "Credential management API requests HMAC secret generation and protection from MiniKMS."
         },
         {
-          "relationship-unique-id": "management-api-to-persistence-store",
+          "relationship-unique-id": "management-api-to-credential-record-store",
           "sequence-number": 4,
           "description": "Credential management API persists encrypted secret material and credential metadata."
+        },
+        {
+          "relationship-unique-id": "management-api-to-audit-event-store",
+          "sequence-number": 5,
+          "description": "Credential management API records the credential issuance audit event."
         }
       ]
     },
@@ -479,9 +549,14 @@
           "description": "Credential management API requests new secret generation and protection from MiniKMS for the replacement credential."
         },
         {
-          "relationship-unique-id": "management-api-to-persistence-store",
+          "relationship-unique-id": "management-api-to-credential-record-store",
           "sequence-number": 4,
-          "description": "Credential management API persists replacement credential state, grace-period metadata when applicable, and related audit data."
+          "description": "Credential management API persists replacement credential state and grace-period metadata when applicable."
+        },
+        {
+          "relationship-unique-id": "management-api-to-audit-event-store",
+          "sequence-number": 5,
+          "description": "Credential management API records the rotation audit event for the standard-grace path."
         }
       ]
     },
@@ -506,9 +581,14 @@
           "description": "Credential management API requests new secret generation and protection from MiniKMS for the replacement credential."
         },
         {
-          "relationship-unique-id": "management-api-to-persistence-store",
+          "relationship-unique-id": "management-api-to-credential-record-store",
           "sequence-number": 4,
-          "description": "Credential management API persists replacement credential state, extended grace-period metadata, and audit evidence of the acting role and reason."
+          "description": "Credential management API persists replacement credential state and extended grace-period metadata."
+        },
+        {
+          "relationship-unique-id": "management-api-to-audit-event-store",
+          "sequence-number": 5,
+          "description": "Credential management API records audit evidence of the acting role and extended-grace reason."
         }
       ]
     },
@@ -528,9 +608,14 @@
           "description": "Admin portal submits the credential revocation request to the credential management API."
         },
         {
-          "relationship-unique-id": "management-api-to-persistence-store",
+          "relationship-unique-id": "management-api-to-credential-record-store",
           "sequence-number": 3,
           "description": "Credential management API persists revoked credential state."
+        },
+        {
+          "relationship-unique-id": "management-api-to-audit-event-store",
+          "sequence-number": 4,
+          "description": "Credential management API records the credential revocation audit event."
         }
       ]
     },
@@ -567,7 +652,7 @@
           "description": "Client service sends an HMAC-signed request to the protected recipient service."
         },
         {
-          "relationship-unique-id": "protected-recipient-service-to-persistence-store",
+          "relationship-unique-id": "protected-recipient-service-to-credential-record-store",
           "sequence-number": 2,
           "description": "Protected recipient service resolves credential metadata when runtime cache is missing or stale."
         },
@@ -652,9 +737,9 @@
           "description": "Admin portal requests credential metadata from the credential management API."
         },
         {
-          "relationship-unique-id": "management-api-to-persistence-store",
+          "relationship-unique-id": "management-api-to-credential-record-store",
           "sequence-number": 3,
-          "description": "Credential management API reads credential metadata from the persistence store."
+          "description": "Credential management API reads credential metadata from the credential record store."
         }
       ]
     },
@@ -696,9 +781,9 @@
           "description": "Admin portal requests audit data from the credential management API."
         },
         {
-          "relationship-unique-id": "management-api-to-persistence-store",
+          "relationship-unique-id": "management-api-to-audit-event-store",
           "sequence-number": 3,
-          "description": "Credential management API reads audit records from the persistence store."
+          "description": "Credential management API reads audit records from the audit event store."
         }
       ]
     }
