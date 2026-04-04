@@ -431,6 +431,60 @@
       ]
     },
     {
+      "unique-id": "reset-administrative-user-password-flow",
+      "name": "Reset Administrative User Password",
+      "description": "AccessAdministrator resets a persisted administrative user's password through the admin portal and management API, with audit capture.",
+      "transitions": [
+        {
+          "relationship-unique-id": "access-administrator-uses-admin-portal",
+          "sequence-number": 1,
+          "description": "AccessAdministrator opens the password reset action for an administrative user in the admin portal."
+        },
+        {
+          "relationship-unique-id": "admin-portal-to-management-api",
+          "sequence-number": 2,
+          "description": "Admin portal submits the password reset request to the credential management API."
+        },
+        {
+          "relationship-unique-id": "management-api-to-administrative-identity-store",
+          "sequence-number": 3,
+          "description": "Credential management API updates the persisted password hash, salt, and related user metadata."
+        },
+        {
+          "relationship-unique-id": "management-api-to-audit-event-store",
+          "sequence-number": 4,
+          "description": "Credential management API records the administrative password reset audit event."
+        }
+      ]
+    },
+    {
+      "unique-id": "assign-administrative-user-role-flow",
+      "name": "Assign Administrative User Role",
+      "description": "AccessAdministrator assigns or changes persisted administrative-user role memberships through the admin portal and management API, with audit capture.",
+      "transitions": [
+        {
+          "relationship-unique-id": "access-administrator-uses-admin-portal",
+          "sequence-number": 1,
+          "description": "AccessAdministrator opens role assignment management for an administrative user in the admin portal."
+        },
+        {
+          "relationship-unique-id": "admin-portal-to-management-api",
+          "sequence-number": 2,
+          "description": "Admin portal submits the role assignment change request to the credential management API."
+        },
+        {
+          "relationship-unique-id": "management-api-to-administrative-identity-store",
+          "sequence-number": 3,
+          "description": "Credential management API persists the updated administrative-user role assignments."
+        },
+        {
+          "relationship-unique-id": "management-api-to-audit-event-store",
+          "sequence-number": 4,
+          "description": "Credential management API records the administrative role assignment audit event."
+        }
+      ]
+    },
+    {
       "unique-id": "register-client-service-flow",
       "name": "Register Client Service",
       "description": "AccessAdministrator creates a new internal client or service record through the portal and management API.",

@@ -55,6 +55,8 @@ These flows represent business actions described by the current requirements bas
 |---|---|
 | Authenticate Administrative User | An access user signs in through the admin portal, the embedded identity provider validates stored credentials and roles, and a bearer token is issued for management API access. |
 | Manage Administrative Users | AccessAdministrator creates, updates, disables, or resets persisted admin-user records and role assignments through the admin portal and management API. |
+| Reset Administrative User Password | AccessAdministrator resets a persisted admin user's password through the admin portal and management API, with audit capture. |
+| Assign Administrative User Role | AccessAdministrator assigns or changes persisted admin-user role memberships through the admin portal and management API, with audit capture. |
 | Register Client Service | AccessAdministrator creates a new internal client/service record through the admin portal and credential management API. |
 | Update Client Service | AccessAdministrator updates client/service metadata such as owner, environment, or descriptive details. |
 | Disable Client Service | AccessAdministrator disables a client/service so it can no longer use managed credentials. |
@@ -82,6 +84,18 @@ These flows represent business actions described by the current requirements bas
 4. Embedded Identity Provider -> Admin Web Portal with bearer token
 
 #### Manage Administrative Users
+1. AccessAdministrator -> Admin Web Portal
+2. Admin Web Portal -> Credential Management API
+3. Credential Management API -> Administrative Identity Store
+4. Credential Management API -> Audit Event Store
+
+#### Reset Administrative User Password
+1. AccessAdministrator -> Admin Web Portal
+2. Admin Web Portal -> Credential Management API
+3. Credential Management API -> Administrative Identity Store
+4. Credential Management API -> Audit Event Store
+
+#### Assign Administrative User Role
 1. AccessAdministrator -> Admin Web Portal
 2. Admin Web Portal -> Credential Management API
 3. Credential Management API -> Administrative Identity Store
