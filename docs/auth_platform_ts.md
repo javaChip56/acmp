@@ -1178,6 +1178,8 @@ Recommended initial error codes:
 | 400 | `invalid_scope_assignment` | Scope list is empty, duplicated, or contains unsupported values. |
 | 401 | `admin_authentication_required` | Caller is not authenticated to use the management API. |
 | 403 | `admin_access_denied` | Caller is authenticated but lacks required administrative permission. |
+| 403 | `audit_access_denied` | Caller is authenticated but is not permitted to view audit data. |
+| 403 | `extended_grace_period_not_allowed` | Caller is authenticated but is not permitted to request a grace period longer than 14 days. |
 | 404 | `client_not_found` | Requested client record does not exist. |
 | 404 | `credential_not_found` | Requested credential does not exist. |
 | 409 | `client_code_conflict` | A client with the same code already exists in the target environment. |
@@ -1231,6 +1233,57 @@ All admin and API endpoints shall use HTTPS.
 ### 14.3 Access Control
 The administration portal shall enforce authenticated access and role-based authorization.
 
+#### 14.3.1 Administrative Identity Requirement
+The administration portal and management API should rely on authenticated internal enterprise identities.
+
+Role assignment should be resolved from the enterprise identity source, such as internal directory groups, claims, or equivalent centrally managed authorization data.
+
+#### 14.3.2 Administrative Roles
+The initial release should implement the following administrative roles:
+
+| Role | Purpose |
+|---|---|
+| `AccessViewer` | Read-only access to service/client access listings and credential metadata listings. |
+| `AccessOperator` | Credential lifecycle operator for standard issuance, rotation, revocation, and package issuance with normal grace periods. |
+| `AccessAdministrator` | Elevated operator role that can authorize extended grace periods and view audit data. |
+
+#### 14.3.3 Role Capability Matrix
+
+| Capability | AccessViewer | AccessOperator | AccessAdministrator |
+|---|---|---|---|
+| View service/client access listings | Yes | Yes | Yes |
+| View credential metadata listings | Yes | Yes | Yes |
+| Issue credentials | No | Yes | Yes |
+| Rotate credentials | No | Yes | Yes |
+| Revoke credentials | No | Yes | Yes |
+| Disable credentials | No | Yes | Yes |
+| Issue encrypted packages | No | Yes | Yes |
+| Configure grace period from 7 to 14 days | No | Yes | Yes |
+| Configure grace period longer than 14 days up to 30 days | No | No | Yes |
+| View audit data | No | No | Yes |
+
+#### 14.3.4 Endpoint Authorization Direction
+Recommended initial endpoint authorization:
+
+- `GET /api/clients/{clientId}/credentials`: `AccessViewer`, `AccessOperator`, or `AccessAdministrator`
+- `POST /api/clients/{clientId}/credentials/hmac`: `AccessOperator` or `AccessAdministrator`
+- `PUT /api/credentials/{credentialId}`: `AccessOperator` or `AccessAdministrator`
+- `POST /api/credentials/{credentialId}/disable`: `AccessOperator` or `AccessAdministrator`
+- `POST /api/credentials/{credentialId}/rotate`: `AccessOperator` or `AccessAdministrator`, with `AccessAdministrator` required for grace periods longer than 14 days
+- `POST /api/credentials/{credentialId}/revoke`: `AccessOperator` or `AccessAdministrator`
+- `POST /api/credentials/{credentialId}/issue-encrypted-package`: `AccessOperator` or `AccessAdministrator`
+- `POST /api/credentials/{credentialId}/issue-client-package`: `AccessOperator` or `AccessAdministrator`
+- `GET /api/audit`: `AccessAdministrator` only
+
+#### 14.3.5 Extended Grace-Period Authorization
+Requests for a grace period longer than 14 days should require:
+
+- an authenticated caller in the `AccessAdministrator` role
+- an explicit operational reason recorded with the rotation request
+- audit logging of the acting role, requested grace period, and outcome
+
+Because maker-checker workflow is out of scope for the initial release, no separate approval queue is required. The `AccessAdministrator` authorization decision acts as the approval for grace periods longer than 14 days.
+
 ### 14.4 Environment Isolation
 Separate keys, policies, and configuration shall be maintained by environment.
 
@@ -1252,6 +1305,8 @@ Capture:
 - credential disablement
 - scope changes
 - expiry changes
+- extended grace-period requests and outcomes
+- acting administrative role for privileged credential lifecycle operations
 
 ### 15.2 Security Events
 Capture:
@@ -1304,6 +1359,10 @@ Cover:
 - cache invalidation on revoke and rotate
 - rotate credential with no grace period and reject the old credential immediately
 - rotate credential with grace period and accept both credentials until grace-period expiry
+- reject grace periods longer than 14 days for `AccessOperator`
+- allow grace periods longer than 14 days up to 30 days for `AccessAdministrator`
+- reject audit access for non-administrative roles
+- allow audit access for `AccessAdministrator`
 - reject the superseded credential after grace-period expiry
 - reload encrypted credential package file after replacement
 - reload encrypted client credential package file after replacement

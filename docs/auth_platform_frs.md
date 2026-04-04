@@ -456,6 +456,9 @@ Audit records shall support traceability by actor, action, target, timestamp, an
 ### FRS-3.10.4 Sensitive Data Protection in Logs
 The system shall not log plaintext secrets or decrypted sensitive values.
 
+### FRS-3.10.5 Administrative Role and Grace-Period Audit
+For credential issuance, rotation, revocation, disablement, and extended grace-period operations, audit records shall capture the acting administrative role and the requested grace-period reason when applicable.
+
 ---
 
 ## 3.11 Web Administration Portal
@@ -474,6 +477,47 @@ All required UI assets shall be hosted locally by the application or approved in
 
 ### FRS-3.11.5 CSP Compatibility
 The administration portal shall be compatible with a restrictive Content Security Policy based primarily on `self`.
+
+### FRS-3.11.6 Authenticated Administrative Access
+The administration portal and management API shall require authenticated internal administrative users.
+
+### FRS-3.11.7 Administrative Role Model
+The initial release shall support the following administrative roles:
+
+- `AccessViewer`
+- `AccessOperator`
+- `AccessAdministrator`
+
+### FRS-3.11.8 AccessViewer Permissions
+`AccessViewer` users shall be allowed to view service/client access listings and credential metadata listings only.
+
+`AccessViewer` users shall not be allowed to issue, rotate, revoke, disable, or modify credentials and shall not be allowed to view audit data.
+
+### FRS-3.11.9 AccessOperator Permissions
+`AccessOperator` users shall be allowed to:
+
+- view service/client access listings and credential metadata
+- issue credentials
+- rotate credentials
+- revoke credentials
+- disable credentials
+- issue encrypted credential packages and encrypted client credential packages
+- configure a rotation grace period from 7 days through 14 days inclusive
+
+`AccessOperator` users shall not be allowed to configure a rotation grace period longer than 14 days and shall not be allowed to view audit data in the initial release.
+
+### FRS-3.11.10 AccessAdministrator Permissions
+`AccessAdministrator` users shall be allowed to perform all `AccessOperator` actions.
+
+`AccessAdministrator` users shall additionally be allowed to:
+
+- configure extended rotation grace periods longer than 14 days up to the platform maximum of 30 days
+- view audit data
+
+### FRS-3.11.11 Extended Grace-Period Approval Rule
+In the initial release, a requested rotation grace period longer than 14 days shall require `AccessAdministrator` authorization and an explicit operational reason.
+
+Because maker-checker workflow is out of scope for the initial release, the `AccessAdministrator` authorization check shall act as the approval for extended grace periods rather than a separate approval workflow.
 
 ---
 
