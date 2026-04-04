@@ -2,7 +2,194 @@
   "$schema": "https://calm.finos.org/release/1.2/meta/calm.json",
   "unique-id": "acmp",
   "name": "ACMP",
-  "description": "Minimal CALM architecture for the Authentication Credential Management Platform.",
-  "nodes": [],
-  "relationships": []
+  "description": "CALM architecture for the Authentication Credential Management Platform based on the current requirements baseline, FRS, and technical specification.",
+  "nodes": [
+    {
+      "unique-id": "acmp-platform",
+      "node-type": "system",
+      "name": "Authentication Credential Management Platform",
+      "description": "Central internal platform for service and client registration, credential lifecycle management, HMAC issuance, authorization metadata, and audit governance."
+    },
+    {
+      "unique-id": "authorized-administrator",
+      "node-type": "actor",
+      "name": "Authorized Administrator",
+      "description": "Authorized internal administrator who manages clients, credentials, scopes, revocation, rotation, and related platform actions."
+    },
+    {
+      "unique-id": "admin-web-portal",
+      "node-type": "webclient",
+      "name": "Admin Web Portal",
+      "description": "Internal AdminLTE-based web portal used to administer services, credentials, and platform configuration."
+    },
+    {
+      "unique-id": "credential-management-api",
+      "node-type": "service",
+      "name": "Credential Management API",
+      "description": "Management API that supports client registration, credential issuance, rotation, revocation, package issuance, and audit-related operations."
+    },
+    {
+      "unique-id": "protected-recipient-service",
+      "node-type": "service",
+      "name": "Protected Recipient Service",
+      "description": "Internal protected service or business API that validates inbound HMAC requests and enforces credential scope and permission checks."
+    },
+    {
+      "unique-id": "client-service",
+      "node-type": "service",
+      "name": "Client Service",
+      "description": "Internal client service that signs outbound HMAC requests when calling protected services."
+    },
+    {
+      "unique-id": "mini-kms",
+      "node-type": "service",
+      "name": "MiniKMS",
+      "description": "Internal cryptographic component used for HMAC secret generation, envelope encryption, decryption, and key versioning."
+    },
+    {
+      "unique-id": "credential-persistence-store",
+      "node-type": "database",
+      "name": "Credential Persistence Store",
+      "description": "SQL Server or PostgreSQL data store holding service and client records, credential metadata, HMAC detail records, and audit data."
+    },
+    {
+      "unique-id": "encrypted-credential-package",
+      "node-type": "data-asset",
+      "name": "Encrypted Credential Package",
+      "description": "Encrypted file artifact issued per KeyId for recipient-side HMAC validation in EncryptedFile mode."
+    },
+    {
+      "unique-id": "encrypted-client-credential-package",
+      "node-type": "data-asset",
+      "name": "Encrypted Client Credential Package",
+      "description": "Encrypted file artifact issued per KeyId for client-side outbound HMAC signing."
+    }
+  ],
+  "relationships": [
+    {
+      "unique-id": "administrator-uses-admin-portal",
+      "description": "Manages clients, credentials, scopes, and platform operations using",
+      "relationship-type": {
+        "interacts": {
+          "actor": "authorized-administrator",
+          "nodes": [
+            "admin-web-portal"
+          ]
+        }
+      }
+    },
+    {
+      "unique-id": "admin-portal-to-management-api",
+      "description": "Uses management operations exposed by",
+      "relationship-type": {
+        "connects": {
+          "source": {
+            "node": "admin-web-portal"
+          },
+          "destination": {
+            "node": "credential-management-api"
+          }
+        }
+      },
+      "protocol": "HTTPS"
+    },
+    {
+      "unique-id": "management-api-to-persistence-store",
+      "description": "Reads and persists client, credential, and audit data in",
+      "relationship-type": {
+        "connects": {
+          "source": {
+            "node": "credential-management-api"
+          },
+          "destination": {
+            "node": "credential-persistence-store"
+          }
+        }
+      }
+    },
+    {
+      "unique-id": "management-api-to-mini-kms",
+      "description": "Uses cryptographic secret generation and protection services from",
+      "relationship-type": {
+        "connects": {
+          "source": {
+            "node": "credential-management-api"
+          },
+          "destination": {
+            "node": "mini-kms"
+          }
+        }
+      }
+    },
+    {
+      "unique-id": "client-service-to-protected-recipient-service",
+      "description": "Sends HMAC-signed requests to",
+      "relationship-type": {
+        "connects": {
+          "source": {
+            "node": "client-service"
+          },
+          "destination": {
+            "node": "protected-recipient-service"
+          }
+        }
+      },
+      "protocol": "HTTPS"
+    },
+    {
+      "unique-id": "protected-recipient-service-to-encrypted-credential-package",
+      "description": "Reads recipient-side encrypted credential material from",
+      "relationship-type": {
+        "connects": {
+          "source": {
+            "node": "protected-recipient-service"
+          },
+          "destination": {
+            "node": "encrypted-credential-package"
+          }
+        }
+      }
+    },
+    {
+      "unique-id": "client-service-to-encrypted-client-credential-package",
+      "description": "Loads outbound signing material from",
+      "relationship-type": {
+        "connects": {
+          "source": {
+            "node": "client-service"
+          },
+          "destination": {
+            "node": "encrypted-client-credential-package"
+          }
+        }
+      }
+    },
+    {
+      "unique-id": "platform-composed-of-shared-components",
+      "description": "Includes shared platform components",
+      "relationship-type": {
+        "composed-of": {
+          "container": "acmp-platform",
+          "nodes": [
+            "admin-web-portal",
+            "credential-management-api"
+          ]
+        }
+      }
+    },
+    {
+      "unique-id": "platform-composed-of-hmac-supporting-components",
+      "description": "Includes HMAC-related supporting components and issued artifacts",
+      "relationship-type": {
+        "composed-of": {
+          "container": "acmp-platform",
+          "nodes": [
+            "mini-kms",
+            "encrypted-credential-package",
+            "encrypted-client-credential-package"
+          ]
+        }
+      }
+    }
+  ]
 }
