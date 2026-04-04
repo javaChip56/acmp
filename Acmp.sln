@@ -21,6 +21,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyCompany.AuthPlatform.Appl
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyCompany.AuthPlatform.Persistence.SqlServer", "src\MyCompany.AuthPlatform.Persistence.SqlServer\MyCompany.AuthPlatform.Persistence.SqlServer.csproj", "{B50AA6F5-7E4F-49C5-8875-445EA325EA2E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyCompany.AuthPlatform.Persistence.Postgres", "src\MyCompany.AuthPlatform.Persistence.Postgres\MyCompany.AuthPlatform.Persistence.Postgres.csproj", "{2C366FFA-5B3C-4CF7-A63B-24B2825E14F0}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -58,6 +60,10 @@ Global
 		{B50AA6F5-7E4F-49C5-8875-445EA325EA2E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B50AA6F5-7E4F-49C5-8875-445EA325EA2E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B50AA6F5-7E4F-49C5-8875-445EA325EA2E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2C366FFA-5B3C-4CF7-A63B-24B2825E14F0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2C366FFA-5B3C-4CF7-A63B-24B2825E14F0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2C366FFA-5B3C-4CF7-A63B-24B2825E14F0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2C366FFA-5B3C-4CF7-A63B-24B2825E14F0}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{72BD4EFB-97D3-40F5-85BF-E1D426A6A97D} = {D9D40F59-3D60-4215-89B9-7053C3E8C4F5}
@@ -67,5 +73,6 @@ Global
 		{17A18A73-2AE1-45AA-97BC-C62B4F7053F9} = {D9D40F59-3D60-4215-89B9-7053C3E8C4F5}
 		{C610C7F5-E525-4028-9B53-8B2CA2FFB364} = {BFCB53D8-A990-4E45-B7BE-726B3D05A766}
 		{B50AA6F5-7E4F-49C5-8875-445EA325EA2E} = {D9D40F59-3D60-4215-89B9-7053C3E8C4F5}
+		{2C366FFA-5B3C-4CF7-A63B-24B2825E14F0} = {D9D40F59-3D60-4215-89B9-7053C3E8C4F5}
 	EndGlobalSection
 EndGlobal

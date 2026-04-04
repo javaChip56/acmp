@@ -5,6 +5,7 @@ public sealed class PersistenceOptions
     public const string SectionName = "Persistence";
     public const string InMemoryDemoProvider = "InMemoryDemo";
     public const string SqlServerProvider = "SqlServer";
+    public const string PostgresProvider = "Postgres";
 
     public string Provider { get; set; } = InMemoryDemoProvider;
 }

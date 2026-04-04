@@ -10,6 +10,7 @@ using MyCompany.AuthPlatform.Application;
 using MyCompany.AuthPlatform.Api;
 using MyCompany.AuthPlatform.Persistence.Abstractions;
 using MyCompany.AuthPlatform.Persistence.InMemory;
+using MyCompany.AuthPlatform.Persistence.Postgres;
 using MyCompany.AuthPlatform.Persistence.SqlServer;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -119,12 +120,16 @@ builder.Services.AddScoped<IAuthPlatformUnitOfWork>(serviceProvider =>
 
     throw new InvalidOperationException(
         $"Persistence provider '{persistenceOptions.Provider}' is not implemented. " +
-        $"Use '{PersistenceOptions.InMemoryDemoProvider}' or '{PersistenceOptions.SqlServerProvider}'.");
+        $"Use '{PersistenceOptions.InMemoryDemoProvider}', '{PersistenceOptions.SqlServerProvider}', or '{PersistenceOptions.PostgresProvider}'.");
 });
 
 if (string.Equals(builder.Configuration[$"{PersistenceOptions.SectionName}:Provider"], PersistenceOptions.SqlServerProvider, StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddAuthPlatformSqlServerPersistence(builder.Configuration);
+}
+else if (string.Equals(builder.Configuration[$"{PersistenceOptions.SectionName}:Provider"], PersistenceOptions.PostgresProvider, StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddAuthPlatformPostgresPersistence(builder.Configuration);
 }
 
 builder.Services.AddScoped<DemoDataSeeder>();
@@ -145,7 +150,8 @@ app.UseAuthorization();
 
 var persistence = app.Services.GetRequiredService<IOptions<PersistenceOptions>>().Value;
 if (!string.Equals(persistence.Provider, PersistenceOptions.InMemoryDemoProvider, StringComparison.OrdinalIgnoreCase) &&
-    !string.Equals(persistence.Provider, PersistenceOptions.SqlServerProvider, StringComparison.OrdinalIgnoreCase))
+    !string.Equals(persistence.Provider, PersistenceOptions.SqlServerProvider, StringComparison.OrdinalIgnoreCase) &&
+    !string.Equals(persistence.Provider, PersistenceOptions.PostgresProvider, StringComparison.OrdinalIgnoreCase))
 {
     throw new InvalidOperationException(
         $"Configured persistence provider '{persistence.Provider}' is not supported by the current host.");
@@ -154,6 +160,10 @@ if (!string.Equals(persistence.Provider, PersistenceOptions.InMemoryDemoProvider
 if (string.Equals(persistence.Provider, PersistenceOptions.SqlServerProvider, StringComparison.OrdinalIgnoreCase))
 {
     await app.Services.ApplyAuthPlatformSqlServerMigrationsAsync();
+}
+else if (string.Equals(persistence.Provider, PersistenceOptions.PostgresProvider, StringComparison.OrdinalIgnoreCase))
+{
+    await app.Services.ApplyAuthPlatformPostgresMigrationsAsync();
 }
 
 using (var scope = app.Services.CreateScope())
@@ -210,7 +220,9 @@ app.MapGet("/api/system/info", (
         [
             string.Equals(persistenceOptions.Value.Provider, PersistenceOptions.InMemoryDemoProvider, StringComparison.OrdinalIgnoreCase)
                 ? "This host currently uses the demo-only in-memory persistence provider."
-                : "This host currently uses the SQL Server persistence provider.",
+                : string.Equals(persistenceOptions.Value.Provider, PersistenceOptions.SqlServerProvider, StringComparison.OrdinalIgnoreCase)
+                    ? "This host currently uses the SQL Server persistence provider."
+                    : "This host currently uses the PostgreSQL persistence provider.",
             authProviderOptions.Mode == AuthenticationModes.DemoHeader
                 ? "Demo authentication is implemented through an ASP.NET Core header-backed scheme using X-Demo-Role and X-Demo-Actor."
                 : authProviderOptions.Mode == AuthenticationModes.EmbeddedIdentity
