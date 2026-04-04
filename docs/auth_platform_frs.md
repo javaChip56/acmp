@@ -293,6 +293,79 @@ The canonical model shall include, at minimum:
 ### FRS-3.8.3 Documentation Requirement
 The canonical signing model shall be documented clearly for client developers.
 
+### FRS-3.8.4 Header Contract
+The initial HMAC request contract shall use the following headers:
+
+- `X-Key-Id`
+- `X-Timestamp`
+- `X-Nonce`
+- `X-Signature`
+
+Header names shall be treated as case-insensitive during request processing, but client and server libraries shall emit and document the canonical header names exactly as listed above.
+
+### FRS-3.8.5 Canonical String Layout
+The canonical string shall consist of exactly seven lines in the following order, separated by line-feed (`\n`) characters:
+
+1. HTTP method
+2. canonical path
+3. canonical query string
+4. body hash
+5. timestamp
+6. nonce
+7. `KeyId`
+
+### FRS-3.8.6 HTTP Method Normalization
+The HTTP method line shall use the uppercase request method value, for example `GET`, `POST`, `PUT`, or `DELETE`.
+
+### FRS-3.8.7 Path Normalization
+The canonical path shall:
+
+- include only the absolute path component
+- exclude scheme, host, port, and fragment
+- preserve case
+- preserve trailing slash when present
+- use `/` when the effective path is empty
+- use UTF-8 based URI escaping with uppercase hexadecimal percent-encoding for any newly encoded bytes
+
+Dot-segment normalization or path rewriting shall not be applied during canonicalization.
+
+### FRS-3.8.8 Query String Normalization
+The canonical query string shall:
+
+- exclude the leading `?`
+- represent each query parameter as a separate key-value pair, including duplicates
+- represent parameters with no explicit value as `name=`
+- sort pairs first by parameter name using ordinal comparison and then by parameter value using ordinal comparison
+- percent-encode parameter names and values using UTF-8 with uppercase hexadecimal percent-encoding
+- join normalized pairs using `&`
+
+If the request contains no query parameters, the canonical query-string line shall be an empty string.
+
+### FRS-3.8.9 Body Hash
+The body-hash line shall be the lowercase hexadecimal SHA-256 hash of the raw request-body bytes.
+
+For requests with no body or a zero-length body, the body hash shall be the SHA-256 hash of zero bytes.
+
+### FRS-3.8.10 Timestamp Format
+The `X-Timestamp` header shall use UTC in the format `yyyy-MM-ddTHH:mm:ssZ` with no fractional seconds.
+
+The server shall validate the timestamp against a configurable skew window.
+
+### FRS-3.8.11 Nonce Handling
+The `X-Nonce` header shall be included in the canonical string.
+
+If a nonce value is not supplied, the nonce line in the canonical string shall be an empty string.
+
+The initial release shall validate nonce presence and format only if configured to require a nonce. Replay-detection persistence remains out of scope for the initial release.
+
+### FRS-3.8.12 Signature Algorithm and Encoding
+The signature shall be computed using `HMACSHA256` over the UTF-8 bytes of the canonical string.
+
+The `X-Signature` header shall contain the resulting signature encoded as lowercase hexadecimal.
+
+### FRS-3.8.13 Canonicalization Failure Behavior
+If the server cannot reconstruct the canonical request using the defined rules, or if required HMAC headers are missing or invalid, the request shall fail authentication securely.
+
 ---
 
 ## 3.9 Scope and Authorization

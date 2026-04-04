@@ -348,7 +348,7 @@ public interface IMasterKeyProvider
 ## 9.0 HMAC Runtime Authentication Design
 
 ### 9.1 Request Headers
-Recommended initial HMAC headers:
+The initial HMAC protocol shall use these request headers:
 
 - X-Key-Id
 - X-Timestamp
@@ -360,30 +360,122 @@ Optional future headers:
 - X-Signed-Headers
 - X-Content-SHA256
 
+Header names are case-insensitive in HTTP processing, but the platform documentation and .NET libraries shall emit the canonical names exactly as shown above.
+
 ### 9.2 Canonical String Model
-The HMAC canonical string shall be deterministic and shall include at minimum:
+The HMAC canonical string shall be deterministic and shall consist of exactly seven UTF-8 text lines separated by line-feed (`\n`) characters:
 
 1. HTTP method
-2. path
-3. query string
+2. canonical path
+3. canonical query string
 4. body hash
 5. timestamp
 6. nonce
 7. KeyId
 
+Canonical template:
+
+```text
+{HTTP_METHOD}
+{CANONICAL_PATH}
+{CANONICAL_QUERY}
+{BODY_SHA256_HEX}
+{TIMESTAMP_UTC}
+{NONCE}
+{KEY_ID}
+```
+
+### 9.3 Normalization Rules
+
+#### 9.3.1 HTTP Method
+Use the uppercase HTTP method value exactly as sent, for example `GET`, `POST`, `PUT`, or `DELETE`.
+
+#### 9.3.2 Canonical Path
+The canonical path shall:
+
+- include only the absolute path component
+- exclude scheme, host, port, and fragment
+- preserve case
+- preserve trailing slash when present
+- use `/` when the effective path is empty
+- use UTF-8 based URI escaping with uppercase hexadecimal percent-encoding for any newly encoded bytes
+
+No dot-segment normalization, route rewriting, or case folding shall be applied during canonicalization.
+
+#### 9.3.3 Canonical Query String
+The canonical query string shall:
+
+- exclude the leading `?`
+- preserve duplicate parameters as separate key-value pairs
+- represent parameters without an explicit value as `name=`
+- sort pairs by name using ordinal comparison and then by value using ordinal comparison
+- percent-encode names and values using UTF-8 with uppercase hexadecimal percent-encoding
+- join pairs using `&`
+
+If no query parameters exist, the canonical query-string line is empty.
+
+Examples:
+
+```text
+Original query: ?b=2&a=1&a=0
+Canonical query: a=0&a=1&b=2
+```
+
+```text
+Original query: ?flag&name=alice%20lee
+Canonical query: flag=&name=alice%20lee
+```
+
+#### 9.3.4 Body Hash
+The body-hash line shall be the lowercase hexadecimal SHA-256 hash of the raw request-body bytes.
+
+For an empty or zero-length body, use the SHA-256 hash of zero bytes:
+
+```text
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+```
+
+#### 9.3.5 Timestamp
+`X-Timestamp` shall use UTC formatted as `yyyy-MM-ddTHH:mm:ssZ` with no fractional seconds.
+
 Example:
+
+```text
+2026-04-01T10:15:00Z
+```
+
+#### 9.3.6 Nonce
+`X-Nonce` is included in the canonical string. If a nonce is omitted, the nonce line is empty.
+
+The initial release does not persist nonces for replay detection, but the wire contract reserves the field so a replay store can be introduced later without changing the signing model.
+
+#### 9.3.7 KeyId
+`X-Key-Id` supplies the credential lookup key and shall be copied into the seventh line of the canonical string exactly as transmitted after header-value trimming.
+
+### 9.4 Signature Calculation
+The server and client libraries shall:
+
+1. Build the canonical string using the rules above.
+2. Encode the canonical string as UTF-8 bytes.
+3. Compute `HMACSHA256` using the credential secret.
+4. Encode the resulting signature bytes as lowercase hexadecimal.
+5. Transmit the value in the `X-Signature` header.
+
+Worked example:
 
 ```text
 POST
 /api/orders/create
 account=123&mode=full
-0f1a...
+6dff39006bfd7895ec3ef56f233bcf5977a4cb6bd10e6aeb44d2169a773a886d
 2026-04-01T10:15:00Z
 nonce-123
 key-prod-001
 ```
 
-### 9.3 Runtime Validation Flow
+The request above is the exact canonical string payload that is converted to UTF-8 and signed.
+
+### 9.5 Runtime Validation Flow
 1. Extract HMAC headers.
 2. Validate required headers.
 3. Determine configured validation mode: `KmsBacked` or `EncryptedFile`.
@@ -396,7 +488,7 @@ key-prod-001
 10. Recompute signature using HMACSHA256.
 11. Compare signatures using constant-time comparison.
 12. Validate timestamp window.
-13. Optionally validate nonce in future phase.
+13. Validate nonce presence and format if required by configuration; replay detection may be added in a future phase.
 14. Validate assigned scopes/permissions after successful authentication.
 15. Reject requests that are authenticated but do not have the required scope/permission for the requested operation.
 16. Establish authenticated principal for authorized requests.
