@@ -27,6 +27,8 @@ builder.Services.Configure<DemoModeOptions>(
     builder.Configuration.GetSection(DemoModeOptions.SectionName));
 builder.Services.Configure<AuthProviderOptions>(
     builder.Configuration.GetSection(AuthProviderOptions.SectionName));
+builder.Services.Configure<HmacSecretProtectionOptions>(
+    builder.Configuration.GetSection(HmacSecretProtectionOptions.SectionName));
 
 var authProviderOptions = builder.Configuration
     .GetSection(AuthProviderOptions.SectionName)
@@ -115,6 +117,15 @@ builder.Services.AddAuthPlatformSqlServerPersistence(builder.Configuration);
 builder.Services.AddAuthPlatformPostgresPersistence(builder.Configuration);
 builder.Services.AddSingleton<IX509CertificateResolver, StoreX509CertificateResolver>();
 builder.Services.AddSingleton<IHmacCredentialPackageProtector, X509HmacCredentialPackageProtector>();
+builder.Services.AddSingleton<IHmacSecretProtector>(serviceProvider =>
+{
+    var options = serviceProvider.GetRequiredService<IOptions<HmacSecretProtectionOptions>>().Value;
+    var keys = options.MasterKeys.ToDictionary(
+        pair => pair.Key,
+        pair => Convert.FromBase64String(pair.Value),
+        StringComparer.Ordinal);
+    return new AesGcmHmacSecretProtector(keys);
+});
 builder.Services.AddScoped<IAuthPlatformUnitOfWork>(serviceProvider =>
 {
     var persistenceOptions = serviceProvider.GetRequiredService<IOptions<PersistenceOptions>>().Value;
@@ -139,7 +150,11 @@ builder.Services.AddScoped<IAuthPlatformUnitOfWork>(serviceProvider =>
 });
 
 builder.Services.AddScoped<DemoDataSeeder>();
-builder.Services.AddScoped<AuthPlatformApplicationService>();
+builder.Services.AddScoped<AuthPlatformApplicationService>(serviceProvider =>
+    new AuthPlatformApplicationService(
+        serviceProvider.GetRequiredService<IAuthPlatformUnitOfWork>(),
+        serviceProvider.GetRequiredService<IHmacCredentialPackageProtector>(),
+        serviceProvider.GetRequiredService<IHmacSecretProtector>()));
 builder.Services.AddScoped<EmbeddedIdentityService>();
 
 var app = builder.Build();

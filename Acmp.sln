@@ -27,6 +27,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyCompany.AuthPlatform.Api.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyCompany.AuthPlatform.Packaging", "src\MyCompany.AuthPlatform.Packaging\MyCompany.AuthPlatform.Packaging.csproj", "{DF391876-BED5-4901-961A-37376525A9DD}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyCompany.AuthPlatform.Hmac", "src\MyCompany.AuthPlatform.Hmac\MyCompany.AuthPlatform.Hmac.csproj", "{A101C6DB-1C74-49D1-BDD4-44F935F578BF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyCompany.AuthPlatform.Hmac.Tests", "tests\MyCompany.AuthPlatform.Hmac.Tests\MyCompany.AuthPlatform.Hmac.Tests.csproj", "{E5BD517E-809E-4594-912C-CFEB7CA9A353}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -76,6 +80,14 @@ Global
 		{DF391876-BED5-4901-961A-37376525A9DD}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{DF391876-BED5-4901-961A-37376525A9DD}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{DF391876-BED5-4901-961A-37376525A9DD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A101C6DB-1C74-49D1-BDD4-44F935F578BF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A101C6DB-1C74-49D1-BDD4-44F935F578BF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A101C6DB-1C74-49D1-BDD4-44F935F578BF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A101C6DB-1C74-49D1-BDD4-44F935F578BF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E5BD517E-809E-4594-912C-CFEB7CA9A353}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E5BD517E-809E-4594-912C-CFEB7CA9A353}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E5BD517E-809E-4594-912C-CFEB7CA9A353}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E5BD517E-809E-4594-912C-CFEB7CA9A353}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{72BD4EFB-97D3-40F5-85BF-E1D426A6A97D} = {D9D40F59-3D60-4215-89B9-7053C3E8C4F5}
@@ -88,5 +100,7 @@ Global
 		{2C366FFA-5B3C-4CF7-A63B-24B2825E14F0} = {D9D40F59-3D60-4215-89B9-7053C3E8C4F5}
 		{B3CA2ECE-CDF8-433D-B06A-7C68C918BDFD} = {BFCB53D8-A990-4E45-B7BE-726B3D05A766}
 		{DF391876-BED5-4901-961A-37376525A9DD} = {D9D40F59-3D60-4215-89B9-7053C3E8C4F5}
+		{A101C6DB-1C74-49D1-BDD4-44F935F578BF} = {D9D40F59-3D60-4215-89B9-7053C3E8C4F5}
+		{E5BD517E-809E-4594-912C-CFEB7CA9A353} = {BFCB53D8-A990-4E45-B7BE-726B3D05A766}
 	EndGlobalSection
 EndGlobal

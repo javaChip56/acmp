@@ -18,13 +18,16 @@ public sealed class AuthPlatformApplicationService
 
     private readonly IAuthPlatformUnitOfWork _unitOfWork;
     private readonly IHmacCredentialPackageProtector _packageProtector;
+    private readonly IHmacSecretProtector _secretProtector;
 
     public AuthPlatformApplicationService(
         IAuthPlatformUnitOfWork unitOfWork,
-        IHmacCredentialPackageProtector? packageProtector = null)
+        IHmacCredentialPackageProtector? packageProtector = null,
+        IHmacSecretProtector? secretProtector = null)
     {
         _unitOfWork = unitOfWork;
         _packageProtector = packageProtector ?? new UnsupportedHmacCredentialPackageProtector();
+        _secretProtector = secretProtector ?? throw new ArgumentNullException(nameof(secretProtector));
     }
 
     public async Task<IReadOnlyList<ServiceClientSummary>> ListClientsAsync(
@@ -315,7 +318,7 @@ public sealed class AuthPlatformApplicationService
             }).ToArray(),
             cancellationToken);
         await _unitOfWork.HmacCredentialDetails.AddAsync(
-            CreateHmacDetail(credential.CredentialId, keyId, keyVersion),
+            CreateHmacDetail(credential.CredentialId, keyId, keyVersion, _secretProtector),
             cancellationToken);
         await AppendAuditLogAsync(
             accessContext,
@@ -431,7 +434,7 @@ public sealed class AuthPlatformApplicationService
             }).ToArray(),
             cancellationToken);
         await _unitOfWork.HmacCredentialDetails.AddAsync(
-            CreateHmacDetail(replacementCredential.CredentialId, keyId, keyVersion),
+            CreateHmacDetail(replacementCredential.CredentialId, keyId, keyVersion, _secretProtector),
             cancellationToken);
         await AppendAuditLogAsync(
             accessContext,
@@ -773,7 +776,6 @@ public sealed class AuthPlatformApplicationService
             ? DefaultCanonicalSigningProfileId
             : null;
 
-        // Until MiniKMS is implemented, the stored secret blob acts as the source secret material for issued packages.
         var definition = new HmacCredentialPackageDefinition(
             packageType,
             PackageId: $"pkg-{Guid.NewGuid():N}",
@@ -787,7 +789,7 @@ public sealed class AuthPlatformApplicationService
             ProtectionBinding: protectionBinding,
             HmacAlgorithm: "HMACSHA256",
             Scopes: packageScopes,
-            Secret: hmacDetail.EncryptedSecret,
+            Secret: _secretProtector.Unprotect(hmacDetail),
             CanonicalSigningProfileId: canonicalSigningProfileId);
 
         IssuedCredentialPackage package;
@@ -1003,10 +1005,14 @@ public sealed class AuthPlatformApplicationService
         return $"key-{environment}-{code}-{suffix}";
     }
 
-    private static HmacCredentialDetail CreateHmacDetail(Guid credentialId, string keyId, string keyVersion)
+    private static HmacCredentialDetail CreateHmacDetail(
+        Guid credentialId,
+        string keyId,
+        string keyVersion,
+        IHmacSecretProtector secretProtector)
     {
-        var bytes = credentialId.ToByteArray();
-        var reversed = bytes.Reverse().ToArray();
+        var plaintextSecret = secretProtector.GenerateSecret();
+        var protectionResult = secretProtector.Protect(plaintextSecret, keyVersion);
 
         return new HmacCredentialDetail
         {
@@ -1014,11 +1020,11 @@ public sealed class AuthPlatformApplicationService
             KeyId = keyId,
             KeyVersion = keyVersion,
             HmacAlgorithm = HmacAlgorithm.HmacSha256,
-            EncryptionAlgorithm = "A256GCM",
-            EncryptedSecret = bytes.Concat(bytes).ToArray(),
-            EncryptedDataKey = reversed.Concat(reversed).ToArray(),
-            Iv = bytes.Take(12).ToArray(),
-            Tag = bytes.Skip(4).Take(12).ToArray(),
+            EncryptionAlgorithm = protectionResult.EncryptionAlgorithm,
+            EncryptedSecret = protectionResult.EncryptedSecret,
+            EncryptedDataKey = protectionResult.EncryptedDataKey,
+            Iv = protectionResult.Iv,
+            Tag = protectionResult.Tag,
         };
     }
 

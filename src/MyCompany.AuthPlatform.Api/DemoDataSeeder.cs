@@ -10,15 +10,18 @@ internal sealed class DemoDataSeeder
     private readonly IAuthPlatformUnitOfWork _unitOfWork;
     private readonly DemoModeOptions _options;
     private readonly AuthProviderOptions _authProviderOptions;
+    private readonly IHmacSecretProtector _secretProtector;
 
     public DemoDataSeeder(
         IAuthPlatformUnitOfWork unitOfWork,
         IOptions<DemoModeOptions> options,
-        IOptions<AuthProviderOptions> authProviderOptions)
+        IOptions<AuthProviderOptions> authProviderOptions,
+        IHmacSecretProtector secretProtector)
     {
         _unitOfWork = unitOfWork;
         _options = options.Value;
         _authProviderOptions = authProviderOptions.Value;
+        _secretProtector = secretProtector;
     }
 
     public async Task SeedAsync(CancellationToken cancellationToken = default)
@@ -192,13 +195,13 @@ internal sealed class DemoDataSeeder
             cancellationToken);
 
         await _unitOfWork.HmacCredentialDetails.AddAsync(
-            CreateHmacDetail(rotatedCredentialId, "key-uat-orders-0001", "kms-v1"),
+            CreateHmacDetail(rotatedCredentialId, "key-uat-orders-0001", "kms-v1", _secretProtector),
             cancellationToken);
         await _unitOfWork.HmacCredentialDetails.AddAsync(
-            CreateHmacDetail(activeCredentialId, "key-uat-orders-0002", "kms-v1"),
+            CreateHmacDetail(activeCredentialId, "key-uat-orders-0002", "kms-v1", _secretProtector),
             cancellationToken);
         await _unitOfWork.HmacCredentialDetails.AddAsync(
-            CreateHmacDetail(revokedCredentialId, "key-uat-billing-0001", "kms-v1"),
+            CreateHmacDetail(revokedCredentialId, "key-uat-billing-0001", "kms-v1", _secretProtector),
             cancellationToken);
 
         await _unitOfWork.AuditLogs.AddAsync(
@@ -308,19 +311,26 @@ internal sealed class DemoDataSeeder
         }
     }
 
-    private static HmacCredentialDetail CreateHmacDetail(Guid credentialId, string keyId, string keyVersion)
+    private static HmacCredentialDetail CreateHmacDetail(
+        Guid credentialId,
+        string keyId,
+        string keyVersion,
+        IHmacSecretProtector secretProtector)
     {
+        var secret = secretProtector.GenerateSecret();
+        var protectionResult = secretProtector.Protect(secret, keyVersion);
+
         return new HmacCredentialDetail
         {
             CredentialId = credentialId,
             KeyId = keyId,
             KeyVersion = keyVersion,
             HmacAlgorithm = HmacAlgorithm.HmacSha256,
-            EncryptionAlgorithm = "A256GCM",
-            EncryptedSecret = [0x01, 0x23, 0x45, 0x67],
-            EncryptedDataKey = [0x10, 0x20, 0x30, 0x40],
-            Iv = [0x50, 0x60, 0x70, 0x80],
-            Tag = [0x90, 0xA0, 0xB0, 0xC0],
+            EncryptionAlgorithm = protectionResult.EncryptionAlgorithm,
+            EncryptedSecret = protectionResult.EncryptedSecret,
+            EncryptedDataKey = protectionResult.EncryptedDataKey,
+            Iv = protectionResult.Iv,
+            Tag = protectionResult.Tag,
         };
     }
 }

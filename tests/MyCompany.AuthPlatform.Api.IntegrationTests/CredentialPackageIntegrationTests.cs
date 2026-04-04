@@ -54,7 +54,8 @@ public sealed class CredentialPackageIntegrationTests
         var payload = DecryptPayload(packageRoot, certificate);
         Assert.Equal("HMACSHA256", payload.GetProperty("hmacAlgorithm").GetString());
         Assert.Equal("acmp-hmac-v1", payload.GetProperty("canonicalSigningProfileId").GetString());
-        Assert.Equal(Convert.ToBase64String([0x01, 0x23, 0x45, 0x67]), payload.GetProperty("secretBase64").GetString());
+        var secret = Convert.FromBase64String(payload.GetProperty("secretBase64").GetString()!);
+        Assert.Equal(32, secret.Length);
 
         var scopes = payload.GetProperty("scopes").EnumerateArray().Select(element => element.GetString()!).ToArray();
         Assert.Equal(["orders.read", "orders.write"], scopes);

@@ -148,12 +148,71 @@ public sealed class AuthPlatformApplicationServiceTests
         Assert.Equal(CredentialPackageType.ServiceValidation, protector.LastDefinition.PackageType);
     }
 
+    [Fact]
+    public async Task IssueServiceValidationPackageAsync_UsesDecryptedSecretMaterial()
+    {
+        var protector = new FakePackageProtector();
+        var secretProtector = new AesGcmHmacSecretProtector(new Dictionary<string, byte[]>
+        {
+            ["kms-v1"] = Enumerable.Range(50, 32).Select(index => (byte)index).ToArray()
+        });
+        var unitOfWork = new InMemoryAuthPlatformUnitOfWork();
+        var service = new AuthPlatformApplicationService(unitOfWork, protector, secretProtector);
+        var operatorAccess = OperatorContext();
+
+        var client = await service.CreateServiceClientAsync(
+            new CreateServiceClientRequest(
+                ClientCode: "pricing-api",
+                ClientName: "Pricing API",
+                Owner: "Commercial Systems",
+                Environment: DeploymentEnvironment.Uat,
+                Description: null,
+                MetadataJson: null),
+            operatorAccess);
+
+        var credential = await service.IssueHmacCredentialAsync(
+            client.ClientId,
+            new IssueHmacCredentialRequest(
+                ExpiresAt: DateTimeOffset.UtcNow.AddDays(30),
+                Scopes: ["pricing.read"],
+                Notes: null,
+                KeyId: "pricing-key-01",
+                KeyVersion: "kms-v1"),
+            operatorAccess);
+
+        await service.IssueServiceValidationPackageAsync(
+            credential.CredentialId,
+            new IssueCredentialPackageRequest(
+                CertificateThumbprint: "ABCD1234EF567890ABCD1234EF567890ABCD1234",
+                StoreLocation: "CurrentUser",
+                StoreName: "My",
+                Reason: null),
+            operatorAccess);
+
+        var storedDetail = await unitOfWork.HmacCredentialDetails.GetByCredentialIdAsync(credential.CredentialId);
+
+        Assert.NotNull(storedDetail);
+        Assert.NotNull(protector.LastDefinition);
+        Assert.Equal(
+            Convert.ToBase64String(secretProtector.Unprotect(storedDetail!)),
+            Convert.ToBase64String(protector.LastDefinition!.Secret));
+        Assert.NotEqual(
+            Convert.ToBase64String(storedDetail!.EncryptedSecret),
+            Convert.ToBase64String(protector.LastDefinition!.Secret));
+    }
+
     private static AuthPlatformApplicationService CreateService(
         out InMemoryAuthPlatformUnitOfWork unitOfWork,
         IHmacCredentialPackageProtector? packageProtector = null)
     {
         unitOfWork = new InMemoryAuthPlatformUnitOfWork();
-        return new AuthPlatformApplicationService(unitOfWork, packageProtector);
+        return new AuthPlatformApplicationService(
+            unitOfWork,
+            packageProtector,
+            new AesGcmHmacSecretProtector(new Dictionary<string, byte[]>
+            {
+                ["kms-v1"] = Enumerable.Range(1, 32).Select(index => (byte)index).ToArray()
+            }));
     }
 
     private static AdminAccessContext AdministratorContext() =>
