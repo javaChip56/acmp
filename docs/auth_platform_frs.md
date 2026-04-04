@@ -492,14 +492,26 @@ Credentials, secrets, keys, and policies shall be segregated by environment.
 ### FRS-3.13.1 Supported Databases
 The system shall support Microsoft SQL Server and PostgreSQL.
 
+### FRS-3.13.1.1 Demo Persistence Mode
+The system may additionally provide a non-persistent in-memory persistence mode for demonstrations.
+
+The demo persistence mode shall:
+
+- store data in process memory only
+- be cleared on application restart or process recycle
+- not be used as a production persistence target
+- follow the same logical repository contracts and business rules as the supported persistent providers where practical
+
 ### FRS-3.13.2 Database-Agnostic Core Logic
 The system’s core business logic and cryptographic logic shall not depend on database engine specifics.
 
 ### FRS-3.13.3 Provider-Based Persistence
-The system shall support separate persistence implementations for MSSQL and PostgreSQL.
+The system shall support separate persistence implementations for MSSQL, PostgreSQL, and an optional in-memory demo provider.
 
 ### FRS-3.13.4 Functional Parity
 The system shall maintain equivalent functional behavior across both supported database platforms.
+
+The in-memory demo provider should preserve equivalent functional behavior for demonstrations, while excluding restart durability and database-engine-specific behavior.
 
 ---
 

@@ -35,6 +35,7 @@ The initial release shall implement:
 - AdminLTE-based admin web portal
 - zero dependency on external/public internet resources
 - persistence portability for MSSQL and PostgreSQL
+- optional non-persistent in-memory demo mode for temporary runtime storage during demonstrations
 
 ### 2.2 Future Expansion Scope
 The platform architecture shall support future addition of:
@@ -276,6 +277,16 @@ The platform shall support:
 - Microsoft SQL Server
 - PostgreSQL
 
+### 9.1.1 Demo Persistence Mode
+The platform may additionally support a non-persistent in-memory persistence provider for demo mode.
+
+The in-memory provider shall:
+
+- be intended for temporary demo usage only
+- be cleared on application restart or process recycle
+- not be treated as a production persistence target
+- follow the same logical data model and business rules as the supported persistent providers where practical
+
 ### 9.2 Database-Agnostic Core
 The platform’s core business logic and cryptographic logic shall be independent from database engine specifics.
 
@@ -284,9 +295,12 @@ Persistence shall be abstracted so that separate implementations can be provided
 
 - MSSQL
 - PostgreSQL
+- InMemoryDemo
 
 ### 9.4 Schema Parity
 Equivalent functional behavior shall be maintained across both supported database platforms.
+
+The in-memory demo provider should preserve the same logical behavior for functional demonstrations, while acknowledging that restart durability, migration behavior, and database engine characteristics do not apply.
 
 ---
 

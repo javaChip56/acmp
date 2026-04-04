@@ -92,6 +92,7 @@ src/
   MyCompany.AuthPlatform.Persistence.Abstractions/
   MyCompany.AuthPlatform.Persistence.SqlServer/
   MyCompany.AuthPlatform.Persistence.Postgres/
+  MyCompany.AuthPlatform.Persistence.InMemory/
   MyCompany.Security.MiniKms/
   MyCompany.Shared.Contracts/
 tests/
@@ -111,6 +112,7 @@ tests/
 | MyCompany.AuthPlatform.Persistence.Abstractions | Repository contracts and persistence interfaces |
 | MyCompany.AuthPlatform.Persistence.SqlServer | SQL Server implementation |
 | MyCompany.AuthPlatform.Persistence.Postgres | PostgreSQL implementation |
+| MyCompany.AuthPlatform.Persistence.InMemory | Demo-only non-persistent in-memory implementation of repository contracts |
 | MyCompany.Security.MiniKms | HMAC secret protection and envelope encryption |
 | MyCompany.Shared.Contracts | DTOs, contracts, enums, constants |
 
@@ -682,8 +684,21 @@ The application shall be compatible with a restrictive Content Security Policy b
 ### 12.1 Database Portability
 The solution shall support Microsoft SQL Server and PostgreSQL.
 
+### 12.1.1 Demo In-Memory Mode
+The solution may additionally support a demo-only in-memory persistence provider.
+
+The in-memory provider shall:
+
+- implement the same repository contracts as the persistent providers
+- keep all data in process memory only
+- be cleared on application restart or process recycle
+- not be used as a production deployment target
+- preserve logical behavior for demos where practical, without claiming restart durability or full database-engine equivalence
+
 ### 12.2 Provider Separation
 Database-specific logic shall be isolated to persistence projects.
+
+The in-memory demo implementation shall be isolated in its own persistence project and selected through the same abstraction boundary.
 
 ### 12.3 Persistence Abstractions
 The shared platform and MiniKMS integration shall depend on repository abstractions rather than provider-specific persistence code.
@@ -698,22 +713,195 @@ Portable mapping considerations include:
 - datetime2 / timestamptz
 - JSON field handling
 
-### 12.5 Suggested Tables
+This logical schema should be treated as the source-of-truth model for both persistent providers and the demo in-memory provider.
 
-#### ServiceClient
+### 12.5 Logical Schema Overview
+Recommended initial logical stores:
+
+- `ServiceClient`
+- `Credential`
+- `CredentialScope`
+- `HmacCredentialDetail`
+- `AuditLog`
+- `OptionalNonce` reserved for future replay protection persistence
+
+### 12.6 Logical Table Definitions
+
+#### 12.6.1 ServiceClient
 Stores generic service/client records.
 
-#### Credential
-Stores generic credential metadata.
+| Column | Type Direction | Required | Notes |
+|---|---|---|---|
+| `ClientId` | GUID / UUID | Yes | Primary key. |
+| `ClientCode` | string | Yes | Human-meaningful stable code; unique within environment. |
+| `ClientName` | string | Yes | Display name. |
+| `Owner` | string | Yes | Accountable team or function. |
+| `Environment` | string | Yes | `DEV`, `TEST`, `UAT`, or `PROD`. |
+| `Status` | string | Yes | Recommended values: `Active`, `Disabled`. |
+| `Description` | string | No | Free-text description. |
+| `MetadataJson` | JSON / text | No | Extensible descriptive metadata. |
+| `DisabledAt` | UTC timestamp | No | Set when client/service is disabled. |
+| `CreatedAt` | UTC timestamp | Yes | Creation timestamp. |
+| `CreatedBy` | string | Yes | Actor identifier. |
+| `UpdatedAt` | UTC timestamp | Yes | Last update timestamp. |
+| `UpdatedBy` | string | Yes | Last update actor. |
+| `ConcurrencyToken` | rowversion / xmin / opaque token | No | Optimistic concurrency support. |
 
-#### HmacCredentialDetail
+Recommended constraints and indexes:
+
+- primary key on `ClientId`
+- unique index on (`Environment`, `ClientCode`)
+- index on (`Environment`, `Status`)
+
+#### 12.6.2 Credential
+Stores generic credential metadata and lifecycle state.
+
+| Column | Type Direction | Required | Notes |
+|---|---|---|---|
+| `CredentialId` | GUID / UUID | Yes | Primary key. |
+| `ClientId` | GUID / UUID | Yes | Foreign key to `ServiceClient.ClientId`. |
+| `AuthenticationMode` | string | Yes | Initial value `HMAC`. |
+| `Status` | string | Yes | Persisted states: `Active`, `Disabled`, `Revoked`. |
+| `Environment` | string | Yes | Should match parent client environment. |
+| `ExpiresAt` | UTC timestamp | No | Effective expiry boundary. |
+| `DisabledAt` | UTC timestamp | No | Set when credential is disabled. |
+| `RevokedAt` | UTC timestamp | No | Set when revoked. |
+| `ReplacedByCredentialId` | GUID / UUID | No | Self-reference to replacement credential after rotation. |
+| `RotationGraceEndsAt` | UTC timestamp | No | Grace overlap end for superseded credential. |
+| `Notes` | string | No | Administrative note or issuance reason. |
+| `CreatedAt` | UTC timestamp | Yes | Creation timestamp. |
+| `CreatedBy` | string | Yes | Actor identifier. |
+| `UpdatedAt` | UTC timestamp | Yes | Last update timestamp. |
+| `UpdatedBy` | string | Yes | Last update actor. |
+| `ConcurrencyToken` | rowversion / xmin / opaque token | No | Optimistic concurrency support. |
+
+Recommended constraints and indexes:
+
+- primary key on `CredentialId`
+- foreign key from `ClientId` to `ServiceClient.ClientId`
+- foreign key from `ReplacedByCredentialId` to `Credential.CredentialId`
+- index on (`ClientId`, `Status`)
+- index on (`Environment`, `AuthenticationMode`, `Status`)
+- index on (`ExpiresAt`)
+- check rule that `RotationGraceEndsAt`, when present, is later than `CreatedAt`
+
+#### 12.6.3 CredentialScope
+Stores assigned scopes or permissions for a credential as individual rows rather than embedded database-specific arrays.
+
+| Column | Type Direction | Required | Notes |
+|---|---|---|---|
+| `CredentialId` | GUID / UUID | Yes | Foreign key to `Credential.CredentialId`. |
+| `ScopeName` | string | Yes | For example `orders.read`. |
+| `CreatedAt` | UTC timestamp | Yes | Assignment timestamp. |
+| `CreatedBy` | string | Yes | Actor identifier. |
+
+Recommended constraints and indexes:
+
+- composite primary key on (`CredentialId`, `ScopeName`)
+- foreign key from `CredentialId` to `Credential.CredentialId`
+- index on (`ScopeName`)
+
+#### 12.6.4 HmacCredentialDetail
 Stores HMAC-specific encrypted secret material and related metadata.
 
-#### AuditLog
+| Column | Type Direction | Required | Notes |
+|---|---|---|---|
+| `CredentialId` | GUID / UUID | Yes | Primary key and foreign key to `Credential.CredentialId`. |
+| `KeyId` | string | Yes | Public lookup key used at runtime. |
+| `EncryptedSecret` | binary | Yes | Encrypted HMAC secret bytes. |
+| `EncryptedDataKey` | binary | Yes | Envelope-encrypted data key. |
+| `KeyVersion` | string | Yes | Master-key version identifier. |
+| `HmacAlgorithm` | string | Yes | Initial value `HMACSHA256`. |
+| `EncryptionAlgorithm` | string | Yes | Envelope-encryption algorithm identifier. |
+| `Iv` | binary | No | IV or nonce for encryption mode when required. |
+| `Tag` | binary | No | Authenticated encryption tag when required. |
+| `LastUsedAt` | UTC timestamp | No | Operational telemetry field. |
+
+Recommended constraints and indexes:
+
+- primary key on `CredentialId`
+- foreign key from `CredentialId` to `Credential.CredentialId`
+- unique index on `KeyId`
+- index on (`KeyVersion`)
+
+#### 12.6.5 AuditLog
 Stores administrative and security events.
 
-#### OptionalNonce
-Reserved for future replay protection persistence.
+| Column | Type Direction | Required | Notes |
+|---|---|---|---|
+| `AuditId` | GUID / UUID | Yes | Primary key. |
+| `Timestamp` | UTC timestamp | Yes | Event time. |
+| `Actor` | string | Yes | User, service, or system actor. |
+| `Action` | string | Yes | For example `CredentialIssued`, `CredentialRotated`, `InvalidSignature`. |
+| `TargetType` | string | Yes | For example `Client`, `Credential`, `Package`. |
+| `TargetId` | string | No | Related entity identifier. |
+| `Environment` | string | No | Event environment context. |
+| `Reason` | string | No | Administrative reason when supplied. |
+| `Outcome` | string | No | Recommended values such as `Succeeded`, `Rejected`, `Failed`. |
+| `CorrelationId` | string | No | Cross-request trace identifier. |
+| `MetadataJson` | JSON / text | No | Structured non-secret event details. |
+
+Recommended constraints and indexes:
+
+- primary key on `AuditId`
+- index on (`Timestamp`)
+- index on (`TargetType`, `TargetId`)
+- index on (`Actor`, `Timestamp`)
+- index on (`Action`, `Timestamp`)
+
+#### 12.6.6 OptionalNonce
+Reserved for future replay protection persistence and not required for the initial release implementation.
+
+Suggested future fields:
+
+- `NonceId`
+- `KeyId`
+- `NonceValue`
+- `SeenAt`
+- `ExpiresAt`
+
+### 12.7 Relationship Rules
+Recommended relationship rules:
+
+- one `ServiceClient` may have many `Credential` rows
+- one `Credential` may have many `CredentialScope` rows
+- one `Credential` in `HMAC` mode shall have exactly one `HmacCredentialDetail` row
+- one `Credential` may reference one replacement credential through `ReplacedByCredentialId`
+- audit events may reference clients, credentials, packages, or platform operations without strict foreign-key coupling for all target types
+
+### 12.8 Logical Integrity Rules
+Recommended initial integrity rules:
+
+- `Credential.Environment` should equal the parent `ServiceClient.Environment`
+- `RevokedAt` should be set when `Status = Revoked`
+- `DisabledAt` should be set when `Status = Disabled`
+- `ReplacedByCredentialId` should not equal `CredentialId`
+- `RotationGraceEndsAt` should be null unless the credential has been superseded by a replacement
+- scopes should be unique per credential
+- no table or column shall store plaintext secrets
+
+Some of these rules may be enforced partly in application services rather than only in database constraints to preserve portability.
+
+### 12.9 Demo In-Memory Provider Behavior
+The demo in-memory provider should model the same logical collections as the persistent schema:
+
+- service clients keyed by `ClientId`
+- credentials keyed by `CredentialId`
+- credential scopes keyed by (`CredentialId`, `ScopeName`)
+- HMAC details keyed by `CredentialId`
+- audit events keyed by `AuditId`
+
+Additional demo-mode rules:
+
+- data exists only for the current process lifetime
+- startup state may be empty or seeded from static demo fixtures
+- restart durability, migration history, and provider-specific SQL behavior do not apply
+- the provider should still enforce uniqueness, lifecycle rules, and secret-handling rules in memory
+
+### 12.10 Persistence Technology Direction
+If EF Core is selected, the SQL Server, PostgreSQL, and in-memory demo providers should share the same logical entity model while keeping provider-specific configuration isolated.
+
+If Dapper is selected, the repository contracts and SQL scripts should still preserve the schema and behavior described above.
 
 ---
 
@@ -1123,6 +1311,7 @@ Cover:
 - reject tampered encrypted client credential package file
 - reject requests securely when credential state cannot be resolved on cache miss
 - fail signing securely when client package state cannot be resolved
+- in-memory demo provider behavior
 - MSSQL provider behavior
 - PostgreSQL provider behavior
 
