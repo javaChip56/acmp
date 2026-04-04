@@ -1,4 +1,5 @@
 using MyCompany.AuthPlatform.Application;
+using MyCompany.AuthPlatform.Packaging;
 using MyCompany.AuthPlatform.Persistence.InMemory;
 using MyCompany.Shared.Contracts.Domain;
 using Xunit;
@@ -98,10 +99,61 @@ public sealed class AuthPlatformApplicationServiceTests
         Assert.False(invalid);
     }
 
-    private static AuthPlatformApplicationService CreateService(out InMemoryAuthPlatformUnitOfWork unitOfWork)
+    [Fact]
+    public async Task IssueServiceValidationPackageAsync_ReturnsPackageAndWritesAuditEntry()
+    {
+        var protector = new FakePackageProtector();
+        var service = CreateService(out _, protector);
+        var operatorAccess = OperatorContext();
+        var adminAccess = AdministratorContext();
+
+        var client = await service.CreateServiceClientAsync(
+            new CreateServiceClientRequest(
+                ClientCode: "inventory-api",
+                ClientName: "Inventory API",
+                Owner: "Supply Chain Team",
+                Environment: DeploymentEnvironment.Uat,
+                Description: null,
+                MetadataJson: null),
+            operatorAccess);
+
+        var credential = await service.IssueHmacCredentialAsync(
+            client.ClientId,
+            new IssueHmacCredentialRequest(
+                ExpiresAt: DateTimeOffset.UtcNow.AddDays(30),
+                Scopes: ["inventory.read"],
+                Notes: "Demo-issued credential",
+                KeyId: "inventory-key-01",
+                KeyVersion: "kms-v1"),
+            operatorAccess);
+
+        var package = await service.IssueServiceValidationPackageAsync(
+            credential.CredentialId,
+            new IssueCredentialPackageRequest(
+                CertificateThumbprint: "ABCD1234EF567890ABCD1234EF567890ABCD1234",
+                StoreLocation: "CurrentUser",
+                StoreName: "My",
+                Reason: "Issue package for service validation"),
+            operatorAccess);
+
+        var auditEntries = await service.ListAuditLogAsync(adminAccess);
+
+        Assert.Equal("ServiceValidation", package.PackageType);
+        Assert.Equal("inventory-key-01.service.acmppkg.json", package.FileName);
+        Assert.Equal("application/vnd.acmp.hmac-service-package+json", package.ContentType);
+        Assert.Equal(credential.CredentialId, package.CredentialId);
+        Assert.Contains(auditEntries, entry => entry.Action == "ServiceValidationPackageIssued");
+        Assert.NotNull(protector.LastDefinition);
+        Assert.Equal("inventory-key-01", protector.LastDefinition!.KeyId);
+        Assert.Equal(CredentialPackageType.ServiceValidation, protector.LastDefinition.PackageType);
+    }
+
+    private static AuthPlatformApplicationService CreateService(
+        out InMemoryAuthPlatformUnitOfWork unitOfWork,
+        IHmacCredentialPackageProtector? packageProtector = null)
     {
         unitOfWork = new InMemoryAuthPlatformUnitOfWork();
-        return new AuthPlatformApplicationService(unitOfWork);
+        return new AuthPlatformApplicationService(unitOfWork, packageProtector);
     }
 
     private static AdminAccessContext AdministratorContext() =>
@@ -109,4 +161,26 @@ public sealed class AuthPlatformApplicationServiceTests
 
     private static AdminAccessContext OperatorContext() =>
         new("operator.demo", AdminAccessRole.AccessOperator, Guid.NewGuid().ToString("N"));
+
+    private sealed class FakePackageProtector : IHmacCredentialPackageProtector
+    {
+        public HmacCredentialPackageDefinition? LastDefinition { get; private set; }
+
+        public Task<IssuedCredentialPackage> ProtectAsync(
+            HmacCredentialPackageDefinition definition,
+            CancellationToken cancellationToken = default)
+        {
+            LastDefinition = definition;
+            return Task.FromResult(new IssuedCredentialPackage(
+                definition.CredentialId,
+                definition.KeyId,
+                definition.PackageType.ToString(),
+                $"{definition.KeyId}.service.acmppkg.json",
+                "application/vnd.acmp.hmac-service-package+json",
+                definition.IssuedAt,
+                definition.KeyVersion,
+                definition.PackageId,
+                [0x01, 0x02, 0x03]));
+        }
+    }
 }

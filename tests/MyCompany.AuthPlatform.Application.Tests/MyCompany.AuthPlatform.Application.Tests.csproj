@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\MyCompany.AuthPlatform.Application\MyCompany.AuthPlatform.Application.csproj" />
+    <ProjectReference Include="..\..\src\MyCompany.AuthPlatform.Packaging\MyCompany.AuthPlatform.Packaging.csproj" />
     <ProjectReference Include="..\..\src\MyCompany.AuthPlatform.Persistence.InMemory\MyCompany.AuthPlatform.Persistence.InMemory.csproj" />
     <ProjectReference Include="..\..\src\MyCompany.Shared.Contracts\MyCompany.Shared.Contracts.csproj" />
   </ItemGroup>

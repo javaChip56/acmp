@@ -17,3 +17,5 @@
 # .NET build outputs
 **/bin/
 **/obj/
+tmp-package-smoke.stderr.log
+tmp-package-smoke.stdout.log

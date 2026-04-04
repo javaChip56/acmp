@@ -103,3 +103,54 @@ public sealed record RotateHmacCredentialRequest(
 
 public sealed record RevokeCredentialRequest(
     string Reason);
+
+public enum CredentialPackageType
+{
+    ServiceValidation = 1,
+    ClientSigning = 2,
+}
+
+public sealed record IssueCredentialPackageRequest(
+    string CertificateThumbprint,
+    string StoreLocation,
+    string StoreName,
+    string? Reason);
+
+public sealed record HmacCredentialPackageProtectionBinding(
+    string CertificateThumbprint,
+    string StoreLocation,
+    string StoreName);
+
+public sealed record HmacCredentialPackageDefinition(
+    CredentialPackageType PackageType,
+    string PackageId,
+    Guid CredentialId,
+    string KeyId,
+    string KeyVersion,
+    CredentialStatus CredentialStatus,
+    DeploymentEnvironment Environment,
+    DateTimeOffset ExpiresAt,
+    DateTimeOffset IssuedAt,
+    HmacCredentialPackageProtectionBinding ProtectionBinding,
+    string HmacAlgorithm,
+    IReadOnlyList<string> Scopes,
+    byte[] Secret,
+    string? CanonicalSigningProfileId);
+
+public sealed record IssuedCredentialPackage(
+    Guid CredentialId,
+    string KeyId,
+    string PackageType,
+    string FileName,
+    string ContentType,
+    DateTimeOffset IssuedAt,
+    string KeyVersion,
+    string PackageId,
+    byte[] PackageBytes);
+
+public interface IHmacCredentialPackageProtector
+{
+    Task<IssuedCredentialPackage> ProtectAsync(
+        HmacCredentialPackageDefinition definition,
+        CancellationToken cancellationToken = default);
+}

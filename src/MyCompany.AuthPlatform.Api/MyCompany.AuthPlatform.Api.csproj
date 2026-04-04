@@ -21,6 +21,7 @@
     <ProjectReference Include="..\MyCompany.AuthPlatform.Persistence.Abstractions\MyCompany.AuthPlatform.Persistence.Abstractions.csproj" />
     <ProjectReference Include="..\MyCompany.AuthPlatform.Persistence.InMemory\MyCompany.AuthPlatform.Persistence.InMemory.csproj" />
     <ProjectReference Include="..\MyCompany.AuthPlatform.Persistence.Postgres\MyCompany.AuthPlatform.Persistence.Postgres.csproj" />
+    <ProjectReference Include="..\MyCompany.AuthPlatform.Packaging\MyCompany.AuthPlatform.Packaging.csproj" />
     <ProjectReference Include="..\MyCompany.AuthPlatform.Persistence.SqlServer\MyCompany.AuthPlatform.Persistence.SqlServer.csproj" />
     <ProjectReference Include="..\MyCompany.AuthPlatform.Application\MyCompany.AuthPlatform.Application.csproj" />
   </ItemGroup>

@@ -14,12 +14,17 @@ public sealed class AuthPlatformApplicationService
     private const int MinimumOperatorGracePeriodDays = 7;
     private const int MinimumPasswordLength = 12;
     private const string DefaultKeyVersion = "kms-v1";
+    private const string DefaultCanonicalSigningProfileId = "acmp-hmac-v1";
 
     private readonly IAuthPlatformUnitOfWork _unitOfWork;
+    private readonly IHmacCredentialPackageProtector _packageProtector;
 
-    public AuthPlatformApplicationService(IAuthPlatformUnitOfWork unitOfWork)
+    public AuthPlatformApplicationService(
+        IAuthPlatformUnitOfWork unitOfWork,
+        IHmacCredentialPackageProtector? packageProtector = null)
     {
         _unitOfWork = unitOfWork;
+        _packageProtector = packageProtector ?? new UnsupportedHmacCredentialPackageProtector();
     }
 
     public async Task<IReadOnlyList<ServiceClientSummary>> ListClientsAsync(
@@ -492,6 +497,34 @@ public sealed class AuthPlatformApplicationService
         return await BuildCredentialSummaryAsync(credential, cancellationToken);
     }
 
+    public async Task<IssuedCredentialPackage> IssueServiceValidationPackageAsync(
+        Guid credentialId,
+        IssueCredentialPackageRequest request,
+        AdminAccessContext accessContext,
+        CancellationToken cancellationToken = default)
+    {
+        return await IssueCredentialPackageAsync(
+            credentialId,
+            request,
+            CredentialPackageType.ServiceValidation,
+            accessContext,
+            cancellationToken);
+    }
+
+    public async Task<IssuedCredentialPackage> IssueClientSigningPackageAsync(
+        Guid credentialId,
+        IssueCredentialPackageRequest request,
+        AdminAccessContext accessContext,
+        CancellationToken cancellationToken = default)
+    {
+        return await IssueCredentialPackageAsync(
+            credentialId,
+            request,
+            CredentialPackageType.ClientSigning,
+            accessContext,
+            cancellationToken);
+    }
+
     public async Task<AdminUserSummary> DisableAdminUserAsync(
         Guid userId,
         DisableAdminUserRequest request,
@@ -696,6 +729,107 @@ public sealed class AuthPlatformApplicationService
         return normalized;
     }
 
+    private async Task<IssuedCredentialPackage> IssueCredentialPackageAsync(
+        Guid credentialId,
+        IssueCredentialPackageRequest request,
+        CredentialPackageType packageType,
+        AdminAccessContext accessContext,
+        CancellationToken cancellationToken)
+    {
+        EnsureMinimumRole(accessContext, AdminAccessRole.AccessOperator);
+
+        var credential = await _unitOfWork.Credentials.GetByIdAsync(credentialId, cancellationToken)
+            ?? throw new ApplicationServiceException(404, "credential_not_found", "The specified credential could not be found.");
+
+        if (credential.AuthenticationMode != AuthenticationMode.Hmac)
+        {
+            throw new ApplicationServiceException(409, "unsupported_authentication_mode", "Only HMAC credential package issuance is implemented in the current release.");
+        }
+
+        if (credential.Status != CredentialStatus.Active || credential.DisabledAt.HasValue || credential.RevokedAt.HasValue)
+        {
+            throw new ApplicationServiceException(409, "credential_state_conflict", "Packages may only be issued for active credentials.");
+        }
+
+        if (!credential.ExpiresAt.HasValue || credential.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        {
+            throw new ApplicationServiceException(409, "credential_expiry_invalid", "Packages may only be issued for credentials with a future expiry.");
+        }
+
+        var hmacDetail = await _unitOfWork.HmacCredentialDetails.GetByCredentialIdAsync(credential.CredentialId, cancellationToken)
+            ?? throw new ApplicationServiceException(409, "package_issuance_failed", "The HMAC credential detail could not be resolved for package issuance.");
+
+        var scopes = await _unitOfWork.CredentialScopes.ListByCredentialIdAsync(credential.CredentialId, cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        var protectionBinding = new HmacCredentialPackageProtectionBinding(
+            RequireText(request.CertificateThumbprint, "certificateThumbprint"),
+            RequireText(request.StoreLocation, "storeLocation"),
+            RequireText(request.StoreName, "storeName"));
+        var packageScopes = scopes
+            .Select(scope => scope.ScopeName)
+            .OrderBy(scope => scope, StringComparer.Ordinal)
+            .ToArray();
+        var canonicalSigningProfileId = packageType == CredentialPackageType.ClientSigning
+            ? DefaultCanonicalSigningProfileId
+            : null;
+
+        // Until MiniKMS is implemented, the stored secret blob acts as the source secret material for issued packages.
+        var definition = new HmacCredentialPackageDefinition(
+            packageType,
+            PackageId: $"pkg-{Guid.NewGuid():N}",
+            CredentialId: credential.CredentialId,
+            KeyId: hmacDetail.KeyId,
+            KeyVersion: hmacDetail.KeyVersion,
+            CredentialStatus: credential.Status,
+            Environment: credential.Environment,
+            ExpiresAt: credential.ExpiresAt.Value,
+            IssuedAt: now,
+            ProtectionBinding: protectionBinding,
+            HmacAlgorithm: "HMACSHA256",
+            Scopes: packageScopes,
+            Secret: hmacDetail.EncryptedSecret,
+            CanonicalSigningProfileId: canonicalSigningProfileId);
+
+        IssuedCredentialPackage package;
+        try
+        {
+            package = await _packageProtector.ProtectAsync(definition, cancellationToken);
+        }
+        catch (ApplicationServiceException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            throw new ApplicationServiceException(500, "package_issuance_failed", "The encrypted package could not be created.");
+        }
+
+        var reason = NormalizeOptionalText(request.Reason) ?? $"{package.PackageType} package issued.";
+        await AppendAuditLogAsync(
+            accessContext,
+            packageType == CredentialPackageType.ServiceValidation
+                ? "ServiceValidationPackageIssued"
+                : "ClientSigningPackageIssued",
+            "CredentialPackage",
+            credential.CredentialId.ToString(),
+            credential.Environment,
+            reason,
+            AuditOutcome.Succeeded,
+            new
+            {
+                role = accessContext.Role.ToString(),
+                packageType = package.PackageType,
+                packageId = package.PackageId,
+                keyId = package.KeyId,
+                keyVersion = package.KeyVersion,
+                fileName = package.FileName,
+            },
+            cancellationToken);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return package;
+    }
+
     private static string RequireText(string? value, string fieldName)
     {
         var normalized = NormalizeOptionalText(value);
@@ -886,5 +1020,15 @@ public sealed class AuthPlatformApplicationService
             Iv = bytes.Take(12).ToArray(),
             Tag = bytes.Skip(4).Take(12).ToArray(),
         };
+    }
+
+    private sealed class UnsupportedHmacCredentialPackageProtector : IHmacCredentialPackageProtector
+    {
+        public Task<IssuedCredentialPackage> ProtectAsync(
+            HmacCredentialPackageDefinition definition,
+            CancellationToken cancellationToken = default)
+        {
+            throw new ApplicationServiceException(500, "package_issuance_failed", "Package protection services are not configured.");
+        }
     }
 }

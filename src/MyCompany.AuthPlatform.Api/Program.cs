@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using MyCompany.AuthPlatform.Application;
 using MyCompany.AuthPlatform.Api;
+using MyCompany.AuthPlatform.Packaging;
 using MyCompany.AuthPlatform.Persistence.Abstractions;
 using MyCompany.AuthPlatform.Persistence.InMemory;
 using MyCompany.AuthPlatform.Persistence.Postgres;
@@ -112,6 +113,8 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<InMemoryPersistenceState>();
 builder.Services.AddAuthPlatformSqlServerPersistence(builder.Configuration);
 builder.Services.AddAuthPlatformPostgresPersistence(builder.Configuration);
+builder.Services.AddSingleton<IX509CertificateResolver, StoreX509CertificateResolver>();
+builder.Services.AddSingleton<IHmacCredentialPackageProtector, X509HmacCredentialPackageProtector>();
 builder.Services.AddScoped<IAuthPlatformUnitOfWork>(serviceProvider =>
 {
     var persistenceOptions = serviceProvider.GetRequiredService<IOptions<PersistenceOptions>>().Value;
@@ -409,6 +412,40 @@ app.MapPost("/api/credentials/{credentialId:guid}/revoke", (
     ApiExecution.ExecuteAsync(httpContext, async accessContext =>
         Results.Ok(await service.RevokeCredentialAsync(credentialId, request, accessContext, cancellationToken))))
 .WithName("RevokeCredential")
+.RequireAuthorization(AdminAccessPolicies.Operator)
+.WithOpenApi();
+
+app.MapPost("/api/credentials/{credentialId:guid}/issue-encrypted-package", (
+    Guid credentialId,
+    IssueCredentialPackageRequest request,
+    HttpContext httpContext,
+    AuthPlatformApplicationService service,
+    CancellationToken cancellationToken) =>
+    ApiExecution.ExecuteAsync(httpContext, async accessContext =>
+    {
+        var package = await service.IssueServiceValidationPackageAsync(credentialId, request, accessContext, cancellationToken);
+        httpContext.Response.Headers.Append("X-Package-Id", package.PackageId);
+        httpContext.Response.Headers.Append("X-Package-Type", package.PackageType);
+        return Results.File(package.PackageBytes, package.ContentType, package.FileName);
+    }))
+.WithName("IssueEncryptedValidationPackage")
+.RequireAuthorization(AdminAccessPolicies.Operator)
+.WithOpenApi();
+
+app.MapPost("/api/credentials/{credentialId:guid}/issue-client-package", (
+    Guid credentialId,
+    IssueCredentialPackageRequest request,
+    HttpContext httpContext,
+    AuthPlatformApplicationService service,
+    CancellationToken cancellationToken) =>
+    ApiExecution.ExecuteAsync(httpContext, async accessContext =>
+    {
+        var package = await service.IssueClientSigningPackageAsync(credentialId, request, accessContext, cancellationToken);
+        httpContext.Response.Headers.Append("X-Package-Id", package.PackageId);
+        httpContext.Response.Headers.Append("X-Package-Type", package.PackageType);
+        return Results.File(package.PackageBytes, package.ContentType, package.FileName);
+    }))
+.WithName("IssueEncryptedClientPackage")
 .RequireAuthorization(AdminAccessPolicies.Operator)
 .WithOpenApi();
 

@@ -140,3 +140,29 @@ Authorization: Bearer <paste-token-here>
 }
 
 ###
+
+POST {{MyCompany.AuthPlatform.Api_HostAddress}}/api/credentials/bd0dd9fc-90d2-4dc8-a99e-5f5d65d8b041/issue-encrypted-package
+Content-Type: application/json
+Authorization: Bearer <paste-token-here>
+
+{
+  "certificateThumbprint": "<paste-thumbprint-here>",
+  "storeLocation": "CurrentUser",
+  "storeName": "My",
+  "reason": "Issue service-side validation package"
+}
+
+###
+
+POST {{MyCompany.AuthPlatform.Api_HostAddress}}/api/credentials/bd0dd9fc-90d2-4dc8-a99e-5f5d65d8b041/issue-client-package
+Content-Type: application/json
+Authorization: Bearer <paste-token-here>
+
+{
+  "certificateThumbprint": "<paste-thumbprint-here>",
+  "storeLocation": "CurrentUser",
+  "storeName": "My",
+  "reason": "Issue client-side signing package"
+}
+
+###
