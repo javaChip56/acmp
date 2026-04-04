@@ -16,7 +16,7 @@ Example:
     "Provider": "SqlServer",
     "SqlServer": {
       "ConnectionString": "Server=(localdb)\\MSSQLLocalDB;Database=Acmp;Trusted_Connection=True;TrustServerCertificate=True",
-      "EnsureCreatedOnStartup": true
+      "ApplyMigrationsOnStartup": true
     }
   }
 }
@@ -24,7 +24,7 @@ Example:
 
 ## Notes
 
-- `EnsureCreatedOnStartup = true` is intended for local bootstrap and development convenience.
+- `ApplyMigrationsOnStartup = true` is intended for local bootstrap and development convenience.
 - The host still seeds the configured embedded-identity bootstrap users when `DemoMode:SeedOnStartup = true`.
 - With SQL Server enabled, persisted admin users, clients, credentials, and audit entries survive application restarts.
 - The PostgreSQL provider is still pending implementation.
@@ -36,6 +36,6 @@ From the repository root:
 ```powershell
 $env:Persistence__Provider = 'SqlServer'
 $env:Persistence__SqlServer__ConnectionString = 'Server=(localdb)\\MSSQLLocalDB;Database=Acmp;Trusted_Connection=True;TrustServerCertificate=True'
-$env:Persistence__SqlServer__EnsureCreatedOnStartup = 'true'
+$env:Persistence__SqlServer__ApplyMigrationsOnStartup = 'true'
 dotnet run --project .\src\MyCompany.AuthPlatform.Api
 ```

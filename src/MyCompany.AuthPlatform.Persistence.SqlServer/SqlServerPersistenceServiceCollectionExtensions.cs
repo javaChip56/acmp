@@ -16,9 +16,9 @@ public static class SqlServerPersistenceServiceCollectionExtensions
         {
             var section = configuration.GetSection(SqlServerPersistenceOptions.SectionName);
             options.ConnectionString = section["ConnectionString"] ?? string.Empty;
-            options.EnsureCreatedOnStartup =
-                bool.TryParse(section["EnsureCreatedOnStartup"], out var ensureCreatedOnStartup) &&
-                ensureCreatedOnStartup;
+            options.ApplyMigrationsOnStartup =
+                bool.TryParse(section["ApplyMigrationsOnStartup"], out var applyMigrationsOnStartup) &&
+                applyMigrationsOnStartup;
         });
 
         services.AddDbContext<AuthPlatformSqlServerDbContext>((serviceProvider, options) =>
@@ -37,16 +37,16 @@ public static class SqlServerPersistenceServiceCollectionExtensions
         return services;
     }
 
-    public static async Task EnsureAuthPlatformSqlServerCreatedAsync(this IServiceProvider serviceProvider)
+    public static async Task ApplyAuthPlatformSqlServerMigrationsAsync(this IServiceProvider serviceProvider)
     {
         using var scope = serviceProvider.CreateScope();
         var options = scope.ServiceProvider.GetRequiredService<IOptions<SqlServerPersistenceOptions>>().Value;
-        if (!options.EnsureCreatedOnStartup)
+        if (!options.ApplyMigrationsOnStartup)
         {
             return;
         }
 
         var dbContext = scope.ServiceProvider.GetRequiredService<AuthPlatformSqlServerDbContext>();
-        await dbContext.Database.EnsureCreatedAsync();
+        await dbContext.Database.MigrateAsync();
     }
 }

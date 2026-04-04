@@ -153,7 +153,7 @@ if (!string.Equals(persistence.Provider, PersistenceOptions.InMemoryDemoProvider
 
 if (string.Equals(persistence.Provider, PersistenceOptions.SqlServerProvider, StringComparison.OrdinalIgnoreCase))
 {
-    await app.Services.EnsureAuthPlatformSqlServerCreatedAsync();
+    await app.Services.ApplyAuthPlatformSqlServerMigrationsAsync();
 }
 
 using (var scope = app.Services.CreateScope())

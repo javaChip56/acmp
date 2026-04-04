@@ -6,5 +6,5 @@ public sealed class SqlServerPersistenceOptions
 
     public string ConnectionString { get; set; } = string.Empty;
 
-    public bool EnsureCreatedOnStartup { get; set; }
+    public bool ApplyMigrationsOnStartup { get; set; }
 }
