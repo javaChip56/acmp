@@ -15,6 +15,7 @@ The solution shall:
 - provide a shared platform for internal service credential management
 - implement HMAC issuance and runtime authentication in the initial release
 - protect HMAC secrets using MiniKMS
+- allow MiniKMS to run either in-process or as a separate internal service
 - avoid MiniKMS decryption on every authentication request through cache-first design
 - support a locally hosted AdminLTE-based administration portal
 - avoid all external/public runtime dependencies
@@ -285,7 +286,15 @@ The initial implementation may keep the provider model lightweight, but naming a
 ### 7.1 Initial Scope
 MiniKMS is initially responsible for HMAC secret protection only.
 
-### 7.2 Responsibilities
+### 7.2 Deployment Model
+MiniKMS shall support two deployment modes behind the same `IMiniKms` abstraction:
+
+- in-process local provider mode
+- separate internal service/process mode accessed over an internal HTTP interface
+
+The main API and application services shall depend only on the shared `IMiniKms` contract so future providers such as Windows Certificate Store or DPAPI-backed implementations can be introduced without changing business logic.
+
+### 7.3 Responsibilities
 MiniKMS shall:
 
 - generate random secret values
@@ -293,23 +302,33 @@ MiniKMS shall:
 - decrypt protected HMAC secret material when required
 - version master keys
 - abstract master-key access
+- expose the active key version to callers
+- preserve key lifecycle state and MiniKMS audit events through a configurable state store
 
-### 7.3 Master Key Handling
+### 7.4 Master Key Handling
 The master key shall not be stored in source code, repository, or database tables.
 
-The initial implementation may use:
+The current implementation supports:
+
+- configured local master keys for in-process mode
+- configured master keys owned by the separate MiniKMS service process
+
+Future implementations may additionally use:
 
 - Windows Certificate Store
 - DPAPI-protected local secret source
 
-### 7.4 Interfaces
+### 7.5 Interfaces
 
 ```csharp
 public interface IMiniKms
 {
-    EncryptedSecretPackage Encrypt(byte[] plaintext);
-    byte[] Decrypt(EncryptedSecretPackage package);
+    string ProviderName { get; }
+    string ActiveKeyVersion { get; }
+
     byte[] GenerateRandomSecret(int sizeInBytes = 32);
+    EncryptedSecretPackage Encrypt(byte[] plaintext, string? keyVersion = null);
+    byte[] Decrypt(EncryptedSecretPackage package);
 }
 ```
 
@@ -334,7 +353,92 @@ public interface IMasterKeyProvider
 }
 ```
 
-### 7.5 Envelope Encryption Flow
+### 7.6 Internal Service Interface
+When MiniKMS runs as a separate internal service, it shall expose internal endpoints for:
+
+- health
+- secret generation
+- secret encryption
+- secret decryption
+- MiniKMS key listing
+- MiniKMS key creation
+- MiniKMS key activation
+- MiniKMS key retirement
+- MiniKMS audit retrieval
+
+The internal service interface shall be protected from anonymous access and support caller attribution for audit purposes.
+
+### 7.7 Persistence Modes
+MiniKMS state shall be stored through a provider-based state-store abstraction.
+
+Supported MiniKMS persistence modes shall include:
+
+- `InMemoryDemo`
+- `File`
+- `SqlServer`
+- `Postgres`
+
+If MiniKMS demo mode is enabled, the service shall force use of `InMemoryDemo` regardless of the configured normal-operation persistence provider.
+
+Outside demo mode:
+
+- `File` is an acceptable local-development or single-node option
+- `SqlServer` and `Postgres` are the intended durable deployment targets
+
+### 7.8 Persisted MiniKMS State
+MiniKMS persisted state shall include:
+
+- active key version identifier
+- known key versions and key status timestamps
+- master-key material required by the configured provider implementation
+- recent MiniKMS audit entries
+
+The state store shall preserve MiniKMS lifecycle and audit state across service restarts except when running in demo mode.
+
+### 7.9 Key Lifecycle
+MiniKMS key versions shall use the following logical states:
+
+- `Active`
+- `Available`
+- `Retired`
+
+`Active` means the key version is the default for new secret protection operations.
+
+`Available` means the key version exists but is not the active version.
+
+`Retired` means the key version is decrypt-only and shall not be used for new encryption.
+
+Activating a new key version shall:
+
+1. mark the replacement key as `Active`
+2. soft-retire the previously active key
+3. preserve the retired key for decryption of previously wrapped material
+
+The active key shall not be retired directly without first activating a replacement key.
+
+### 7.10 MiniKMS Audit Model
+MiniKMS shall write audit events for at least:
+
+- `GenerateSecret`
+- `EncryptSecret`
+- `DecryptSecret`
+- `CreateKeyVersion`
+- `ActivateKeyVersion`
+- `RetireKeyVersion`
+
+MiniKMS audit entries shall capture:
+
+- audit identifier
+- UTC timestamp
+- action
+- outcome
+- actor
+- key version when applicable
+- non-secret operational details
+
+MiniKMS audit entries shall not contain plaintext secrets, decrypted secrets, wrapped data keys, or raw master-key material.
+
+### 7.11 Envelope Encryption Flow
 1. Generate plaintext HMAC secret.
 2. Generate random data key.
 3. Encrypt secret with data key.
@@ -1687,7 +1791,18 @@ Capture:
 - cache miss surge
 - timestamp failure
 
-### 15.3 Redaction
+### 15.3 MiniKMS Audit Events
+Capture:
+
+- secret generation requests and outcomes
+- secret encryption requests and outcomes
+- secret decryption requests and outcomes
+- MiniKMS key creation
+- MiniKMS key activation
+- MiniKMS key retirement
+- MiniKMS actor attribution for internal key-management actions
+
+### 15.4 Redaction
 Logs shall not contain plaintext or decrypted secret values.
 
 ---
@@ -1747,6 +1862,13 @@ Cover:
 - reject tampered encrypted client credential package file
 - reject requests securely when credential state cannot be resolved on cache miss
 - fail signing securely when client package state cannot be resolved
+- call a remote MiniKMS service successfully through the shared `IMiniKms` abstraction
+- persist MiniKMS state and audit entries across service restart in file-backed mode
+- persist MiniKMS state and audit entries across service restart in SQL Server mode
+- persist MiniKMS state and audit entries across service restart in PostgreSQL mode
+- keep MiniKMS state ephemeral when demo mode is enabled
+- soft-retire the previous active MiniKMS key when activating a replacement key
+- allow decrypt operations with retired MiniKMS key versions
 - in-memory demo provider behavior
 - MSSQL provider behavior
 - PostgreSQL provider behavior
@@ -1758,6 +1880,7 @@ Cover:
 - one-time secret reveal behavior
 - no plaintext secret retrieval
 - no secret leakage through logs
+- no plaintext or wrapped secret leakage through MiniKMS audit responses
 
 ---
 
@@ -1772,7 +1895,6 @@ The initial release shall not implement:
 - Kerberos support
 - distributed cache
 - external KMS integration
-- standalone MiniKMS service
 - replay nonce persistence
 - maker-checker workflow
 
@@ -1780,4 +1902,4 @@ The initial release shall not implement:
 
 ## 18.0 Conclusion
 
-This technical design defines a shared internal authentication credential management platform with an initial HMAC implementation. It provides a future-ready architecture for additional authentication modes while delivering a practical first release with MiniKMS-backed HMAC secret protection, cache-first runtime authentication, an AdminLTE internal portal with no external/public dependencies, and provider-based persistence supporting both Microsoft SQL Server and PostgreSQL.
+This technical design defines a shared internal authentication credential management platform with an initial HMAC implementation. It provides a future-ready architecture for additional authentication modes while delivering a practical first release with MiniKMS-backed HMAC secret protection, cache-first runtime authentication, an AdminLTE internal portal with no external/public dependencies, provider-based persistence supporting both Microsoft SQL Server and PostgreSQL, and an internal MiniKMS design that can run locally or as a separate service with auditable, soft-retired key lifecycle management.

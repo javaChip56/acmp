@@ -30,7 +30,7 @@ The system shall provide:
 | Client / Service | An internal system, application, or service that consumes or exposes protected APIs |
 | Credential | Authentication material associated with a client or service |
 | Authentication Mode | The authentication mechanism used by a credential, such as HMAC or JWT |
-| MiniKMS | Internal cryptographic component used initially for HMAC secret protection |
+| MiniKMS | Internal cryptographic component or internal service used initially for HMAC secret protection |
 | KeyId | Public identifier used to locate an HMAC credential |
 | Scope | Permission or access boundary assigned to a credential |
 
@@ -278,7 +278,45 @@ MiniKMS shall support master-key versioning.
 ### FRS-3.5.5 Master Key Abstraction
 MiniKMS shall abstract master-key access from the rest of the application.
 
-### FRS-3.5.6 Future Scope Flexibility
+### FRS-3.5.6 Internal Service Option
+MiniKMS may run either in-process or as a separate internal service/process accessed through an internal interface.
+
+### FRS-3.5.7 Persistence Modes
+MiniKMS shall support persisted key-ring state and audit history for normal operation.
+
+Supported MiniKMS persistence modes shall include:
+
+- Microsoft SQL Server
+- PostgreSQL
+- file-backed local persistence
+- an in-memory demo mode for demonstrations only
+
+### FRS-3.5.8 Demo Mode Behavior
+If MiniKMS demo mode is enabled, key-ring state and audit history may be stored in memory only and shall be treated as non-durable.
+
+### FRS-3.5.9 Key Lifecycle States
+MiniKMS key versions shall support at least the following lifecycle states:
+
+- `Active`
+- `Available`
+- `Retired`
+
+### FRS-3.5.10 Active Key Usage
+Only the active MiniKMS key version shall be used for new secret protection operations by default.
+
+### FRS-3.5.11 Retired Key Usage
+Retired MiniKMS key versions shall remain available for decrypting previously protected secret material and shall not be used for new encryption.
+
+### FRS-3.5.12 Key Rotation Semantics
+Activating a replacement MiniKMS key version shall soft-retire the previously active key version rather than destroying it immediately.
+
+### FRS-3.5.13 Audit Logging
+MiniKMS shall record audit events for key creation, key activation, key retirement, secret generation, secret encryption, and secret decryption attempts.
+
+### FRS-3.5.14 Audit Content Restrictions
+MiniKMS audit events shall not contain plaintext secret values, decrypted secret values, raw master-key material, or wrapped data keys.
+
+### FRS-3.5.15 Future Scope Flexibility
 The system shall not assume MiniKMS is the mandatory cryptographic mechanism for all future authentication modes.
 
 ---
@@ -645,6 +683,12 @@ The system shall maintain equivalent functional behavior across both supported d
 
 The in-memory demo provider should preserve equivalent functional behavior for demonstrations, while excluding restart durability and database-engine-specific behavior.
 
+### FRS-3.13.5 MiniKMS Persistence Portability
+MiniKMS persistence shall support provider-based storage for SQL Server, PostgreSQL, file-backed local persistence, and an optional in-memory demo provider.
+
+### FRS-3.13.6 MiniKMS Durability
+Outside demo mode, MiniKMS key-ring state and audit history shall survive process restart through the configured persistence provider.
+
 ---
 
 ## 4.0 Out of Scope for Initial Release
@@ -659,7 +703,6 @@ The initial release shall not implement:
 - Kerberos integration
 - distributed cache
 - external KMS integration
-- standalone MiniKMS service
 - replay nonce persistence store
 - maker-checker workflow
 
@@ -667,4 +710,4 @@ The initial release shall not implement:
 
 ## 5.0 Summary
 
-The platform is a generic internal authentication credential management platform with an initial release focused on HMAC. It includes HMAC secret issuance, HMAC request authentication, MiniKMS-backed HMAC secret protection, cache-first runtime authentication, AdminLTE-based internal administration, no external/public resource dependency, and database portability across Microsoft SQL Server and PostgreSQL.
+The platform is a generic internal authentication credential management platform with an initial release focused on HMAC. It includes HMAC secret issuance, HMAC request authentication, MiniKMS-backed HMAC secret protection, cache-first runtime authentication, AdminLTE-based internal administration, no external/public resource dependency, provider-based persistence across Microsoft SQL Server and PostgreSQL, and an internal MiniKMS design that supports soft-retired key versions, audit logging, and durable or demo-mode state storage.
