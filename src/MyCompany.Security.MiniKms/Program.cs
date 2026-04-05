@@ -15,28 +15,66 @@ builder.Services.Configure<JsonOptions>(_ => { });
 builder.Services.Configure<MiniKmsServiceOptions>(
     builder.Configuration.GetSection(MiniKmsServiceOptions.SectionName));
 
-var configuredOptions = builder.Configuration
-    .GetSection(MiniKmsServiceOptions.SectionName)
-    .Get<MiniKmsServiceOptions>()
-    ?? new MiniKmsServiceOptions();
-
-ValidateMiniKmsInternalJwtOptions(configuredOptions.InternalJwt);
-
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
+    .AddJwtBearer();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("MiniKmsInternalApi", policy =>
     {
+        policy.RequireAuthenticatedUser();
+        policy.RequireClaim(
+            MiniKmsInternalJwtTokenProvider.ScopeClaimType,
+            MiniKmsInternalJwtTokenProvider.RequiredScope);
+    });
+});
+
+builder.Services.AddSingleton<IMiniKmsInternalJwtKeyStateStore>(serviceProvider =>
+{
+    var options = serviceProvider.GetRequiredService<IOptions<MiniKmsServiceOptions>>().Value;
+    ValidateMiniKmsInternalJwtOptions(options.InternalJwt);
+    var bootstrapSnapshot = MiniKmsInternalJwtStateStoreFactory.CreateBootstrapSnapshot(
+        options.InternalJwt.ActiveKeyVersion,
+        TryResolveBootstrapSigningKey(options.InternalJwt));
+    if (string.Equals(options.InternalJwt.KeySource, MiniKmsInternalJwtOptions.ManagedStateSource, StringComparison.OrdinalIgnoreCase))
+    {
+        return MiniKmsInternalJwtStateStoreFactory.Create(options.InternalJwt.ManagedState, bootstrapSnapshot);
+    }
+
+    return new InMemoryMiniKmsInternalJwtKeyStateStore(bootstrapSnapshot);
+});
+builder.Services.AddSingleton<IRotatingInternalJwtKeyProvider>(serviceProvider =>
+    new RotatingInternalJwtKeyProvider(serviceProvider.GetRequiredService<IMiniKmsInternalJwtKeyStateStore>()));
+builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+    .Configure<IRotatingInternalJwtKeyProvider, IOptions<MiniKmsServiceOptions>>((options, internalJwtKeyProvider, configuredOptionsAccessor) =>
+    {
+        var configuration = configuredOptionsAccessor.Value;
+        ValidateMiniKmsInternalJwtOptions(configuration.InternalJwt);
         options.MapInboundClaims = false;
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
-            ValidIssuer = configuredOptions.InternalJwt.Issuer,
+            ValidIssuer = configuration.InternalJwt.Issuer,
             ValidateAudience = true,
-            ValidAudience = configuredOptions.InternalJwt.Audience,
+            ValidAudience = configuration.InternalJwt.Audience,
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(configuredOptions.InternalJwt.SigningKey)),
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(1),
             NameClaimType = JwtRegisteredClaimNames.Sub,
+            IssuerSigningKeyResolver = (_, _, kid, _) =>
+            {
+                var descriptors = internalJwtKeyProvider.ListValidationKeys();
+                var selected = string.IsNullOrWhiteSpace(kid)
+                    ? descriptors.Where(descriptor => descriptor.IsActive)
+                    : descriptors.Where(descriptor => string.Equals(descriptor.KeyVersion, kid, StringComparison.Ordinal));
+                return selected.Select(descriptor =>
+                {
+                    var key = new SymmetricSecurityKey(descriptor.SigningKey.ToArray())
+                    {
+                        KeyId = descriptor.KeyVersion
+                    };
+                    return (SecurityKey)key;
+                });
+            },
         };
         options.Events = new JwtBearerEvents
         {
@@ -63,16 +101,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             }
         };
     });
-builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy("MiniKmsInternalApi", policy =>
-    {
-        policy.RequireAuthenticatedUser();
-        policy.RequireClaim(
-            MiniKmsInternalJwtTokenProvider.ScopeClaimType,
-            MiniKmsInternalJwtTokenProvider.RequiredScope);
-    });
-});
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -144,6 +172,7 @@ var miniKms = app.Services.GetRequiredService<IMiniKms>();
 var options = app.Services.GetRequiredService<IOptions<MiniKmsServiceOptions>>().Value;
 var rotatingProvider = app.Services.GetRequiredService<IRotatingMasterKeyProvider>();
 var auditLog = app.Services.GetRequiredService<IMiniKmsAuditLog>();
+var serviceTokenKeyProvider = app.Services.GetService<IRotatingInternalJwtKeyProvider>();
 
 app.MapGet("/health", () =>
 {
@@ -233,6 +262,128 @@ internalApi.MapGet("/audit", (int? take) =>
 })
 .WithName("ListMiniKmsAudit")
 .WithOpenApi();
+
+if (serviceTokenKeyProvider is not null)
+{
+    internalApi.MapGet("/service-auth/keys", () =>
+    {
+        return TypedResults.Ok(serviceTokenKeyProvider.ListKeyVersions());
+    })
+    .WithName("ListMiniKmsServiceAuthKeys")
+    .WithOpenApi();
+
+    internalApi.MapPost("/service-auth/keys", (CreateKeyVersionRequest request, HttpContext httpContext) =>
+    {
+        try
+        {
+            var keyMaterial = string.IsNullOrWhiteSpace(request.MasterKeyBase64)
+                ? null
+                : Convert.FromBase64String(request.MasterKeyBase64);
+            var summary = serviceTokenKeyProvider.AddKeyVersion(request.KeyVersion, keyMaterial, request.Activate);
+            auditLog.Write(
+                "CreateServiceAuthKeyVersion",
+                "Success",
+                ResolveActor(httpContext),
+                summary.KeyVersion,
+                summary.IsActive
+                    ? "Created and activated a new MiniKMS internal JWT signing key version."
+                    : "Created a new MiniKMS internal JWT signing key version.");
+            return TypedResults.Ok(summary);
+        }
+        catch (FormatException)
+        {
+            return Results.Json(
+                new { errorCode = "minikms_validation_error", message = "MasterKeyBase64 must be a valid base64 string when provided." },
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+        catch (ArgumentException exception)
+        {
+            auditLog.Write("CreateServiceAuthKeyVersion", "Rejected", ResolveActor(httpContext), request.KeyVersion, exception.Message);
+            return Results.Json(
+                new { errorCode = "minikms_validation_error", message = exception.Message },
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+        catch (InvalidOperationException exception)
+        {
+            auditLog.Write("CreateServiceAuthKeyVersion", "Rejected", ResolveActor(httpContext), request.KeyVersion, exception.Message);
+            return Results.Json(
+                new { errorCode = "minikms_conflict", message = exception.Message },
+                statusCode: StatusCodes.Status409Conflict);
+        }
+    })
+    .WithName("CreateMiniKmsServiceAuthKey")
+    .WithOpenApi();
+
+    internalApi.MapPost("/service-auth/keys/{keyVersion}/activate", (string keyVersion, HttpContext httpContext) =>
+    {
+        try
+        {
+            var summary = serviceTokenKeyProvider.ActivateKeyVersion(keyVersion);
+            auditLog.Write(
+                "ActivateServiceAuthKeyVersion",
+                "Success",
+                ResolveActor(httpContext),
+                summary.KeyVersion,
+                "Activated a MiniKMS internal JWT signing key version and soft-retired the previous active key.");
+            return TypedResults.Ok(summary);
+        }
+        catch (ArgumentException exception)
+        {
+            auditLog.Write("ActivateServiceAuthKeyVersion", "Rejected", ResolveActor(httpContext), keyVersion, exception.Message);
+            return Results.Json(
+                new { errorCode = "minikms_validation_error", message = exception.Message },
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+        catch (InvalidOperationException exception)
+        {
+            auditLog.Write("ActivateServiceAuthKeyVersion", "Rejected", ResolveActor(httpContext), keyVersion, exception.Message);
+            return Results.Json(
+                new { errorCode = "minikms_not_found", message = exception.Message },
+                statusCode: StatusCodes.Status404NotFound);
+        }
+    })
+    .WithName("ActivateMiniKmsServiceAuthKey")
+    .WithOpenApi();
+
+    internalApi.MapPost("/service-auth/keys/{keyVersion}/retire", (string keyVersion, HttpContext httpContext) =>
+    {
+        try
+        {
+            var summary = serviceTokenKeyProvider.RetireKeyVersion(keyVersion);
+            auditLog.Write(
+                "RetireServiceAuthKeyVersion",
+                "Success",
+                ResolveActor(httpContext),
+                summary.KeyVersion,
+                "Soft-retired a MiniKMS internal JWT signing key version. The key remains valid for token validation until removed from the accepted key ring.");
+            return TypedResults.Ok(summary);
+        }
+        catch (ArgumentException exception)
+        {
+            auditLog.Write("RetireServiceAuthKeyVersion", "Rejected", ResolveActor(httpContext), keyVersion, exception.Message);
+            return Results.Json(
+                new { errorCode = "minikms_validation_error", message = exception.Message },
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+        catch (InvalidOperationException exception)
+        {
+            auditLog.Write("RetireServiceAuthKeyVersion", "Rejected", ResolveActor(httpContext), keyVersion, exception.Message);
+            return Results.Json(
+                new
+                {
+                    errorCode = exception.Message.Contains("cannot be retired directly", StringComparison.OrdinalIgnoreCase)
+                        ? "minikms_invalid_state"
+                        : "minikms_not_found",
+                    message = exception.Message
+                },
+                statusCode: exception.Message.Contains("cannot be retired directly", StringComparison.OrdinalIgnoreCase)
+                    ? StatusCodes.Status409Conflict
+                    : StatusCodes.Status404NotFound);
+        }
+    })
+    .WithName("RetireMiniKmsServiceAuthKey")
+    .WithOpenApi();
+}
 
 internalApi.MapPost("/keys", (CreateKeyVersionRequest request, HttpContext httpContext) =>
 {
@@ -366,9 +517,27 @@ static void ValidateMiniKmsInternalJwtOptions(MiniKmsInternalJwtOptions options)
         throw new InvalidOperationException("MiniKms:InternalJwt:Audience must be configured for the MiniKMS service.");
     }
 
-    if (string.IsNullOrWhiteSpace(options.SigningKey) || Encoding.UTF8.GetByteCount(options.SigningKey) < 32)
+    if (string.Equals(options.KeySource, MiniKmsInternalJwtOptions.ConfigSource, StringComparison.OrdinalIgnoreCase) &&
+        (string.IsNullOrWhiteSpace(options.SigningKey) || Encoding.UTF8.GetByteCount(options.SigningKey) < 32))
     {
         throw new InvalidOperationException("MiniKms:InternalJwt:SigningKey must be configured and be at least 32 bytes long for the MiniKMS service.");
+    }
+}
+
+static byte[]? TryResolveBootstrapSigningKey(MiniKmsInternalJwtOptions options)
+{
+    if (string.IsNullOrWhiteSpace(options.SigningKey))
+    {
+        return null;
+    }
+
+    try
+    {
+        return Convert.FromBase64String(options.SigningKey);
+    }
+    catch (FormatException)
+    {
+        return Encoding.UTF8.GetBytes(options.SigningKey);
     }
 }
 

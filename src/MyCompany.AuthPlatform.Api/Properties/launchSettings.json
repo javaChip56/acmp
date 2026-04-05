@@ -40,11 +40,14 @@
         "MiniKms__Provider": "RemoteMiniKms",
         "MiniKms__Remote__BaseUrl": "https://localhost:7190",
         "MiniKms__Remote__TimeoutSeconds": "15",
+        "MiniKms__Remote__InternalJwt__KeySource": "MiniKmsState",
         "MiniKms__Remote__InternalJwt__Issuer": "acmp-internal-services",
         "MiniKms__Remote__InternalJwt__Audience": "mini-kms-internal",
-        "MiniKms__Remote__InternalJwt__SigningKey": "AcmpMiniKmsInternalSigningKey123456789!",
+        "MiniKms__Remote__InternalJwt__ActiveKeyVersion": "svcjwt-v1",
         "MiniKms__Remote__InternalJwt__Subject": "acmp-api",
-        "MiniKms__Remote__InternalJwt__TokenLifetimeMinutes": "5"
+        "MiniKms__Remote__InternalJwt__TokenLifetimeMinutes": "5",
+        "MiniKms__Remote__InternalJwt__ManagedState__Provider": "File",
+        "MiniKms__Remote__InternalJwt__ManagedState__StateFilePath": "..\\MyCompany.Security.MiniKms\\App_Data\\minikms-internal-jwt-state.development.json"
       }
     },
     "IIS Express": {

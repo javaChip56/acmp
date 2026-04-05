@@ -25,11 +25,16 @@ The service uses the `MiniKms` config section in [appsettings.json](/d:/Research
     "ActiveKeyVersion": "kms-v1",
     "StateFilePath": "App_Data/minikms-state.json",
     "InternalJwt": {
+      "KeySource": "MiniKmsState",
       "Issuer": "acmp-internal-services",
       "Audience": "mini-kms-internal",
-      "SigningKey": "AcmpMiniKmsInternalSigningKey123456789!",
+      "ActiveKeyVersion": "svcjwt-v1",
       "Subject": "acmp-api",
-      "TokenLifetimeMinutes": 5
+      "TokenLifetimeMinutes": 5,
+      "ManagedState": {
+        "Provider": "File",
+        "StateFilePath": "App_Data/minikms-internal-jwt-state.json"
+      }
     },
     "SqlServer": {
       "ConnectionString": "Server=(localdb)\\MSSQLLocalDB;Database=AcmpMiniKms;Trusted_Connection=True;TrustServerCertificate=True"
@@ -55,6 +60,10 @@ Internal endpoints:
 - `POST /internal/minikms/keys/{keyVersion}/activate`
 - `POST /internal/minikms/keys/{keyVersion}/retire`
 - `GET /internal/minikms/audit`
+- `GET /internal/minikms/service-auth/keys`
+- `POST /internal/minikms/service-auth/keys`
+- `POST /internal/minikms/service-auth/keys/{keyVersion}/activate`
+- `POST /internal/minikms/service-auth/keys/{keyVersion}/retire`
 
 The internal endpoints require a signed bearer token issued for the internal MiniKMS audience.
 Actor attribution is taken from the token subject.
@@ -118,18 +127,23 @@ Update the main API config in [appsettings.json](/d:/Research/acmp/src/MyCompany
       "BaseUrl": "https://localhost:7190",
       "TimeoutSeconds": 15,
       "InternalJwt": {
+        "KeySource": "MiniKmsState",
         "Issuer": "acmp-internal-services",
         "Audience": "mini-kms-internal",
-        "SigningKey": "AcmpMiniKmsInternalSigningKey123456789!",
+        "ActiveKeyVersion": "svcjwt-v1",
         "Subject": "acmp-api",
-        "TokenLifetimeMinutes": 5
+        "TokenLifetimeMinutes": 5,
+        "ManagedState": {
+          "Provider": "File",
+          "StateFilePath": "..\\MyCompany.Security.MiniKms\\App_Data\\minikms-internal-jwt-state.json"
+        }
       }
     }
   }
 }
 ```
 
-When `Provider` is `RemoteMiniKms`, the API keeps using the same application-layer secret protection flow, but the underlying `IMiniKms` implementation becomes an HTTP client to the separate MiniKMS service.
+When `Provider` is `RemoteMiniKms`, the API keeps using the same application-layer secret protection flow, but the underlying `IMiniKms` implementation becomes an HTTP client to the separate MiniKMS service. In `MiniKmsState` mode, the bearer tokens used for API-to-MiniKMS authentication are signed from the MiniKMS-managed internal JWT key ring rather than from a static config secret.
 
 ## Rotate and soft-retire keys
 
@@ -185,11 +199,46 @@ Invoke-RestMethod `
   -Headers $headers
 ```
 
+## Rotate internal service-auth JWT keys
+
+List the current internal JWT signing key versions:
+
+```powershell
+Invoke-RestMethod `
+  -Method Get `
+  -Uri https://localhost:7190/internal/minikms/service-auth/keys `
+  -Headers $headers
+```
+
+Create a replacement internal JWT signing key version:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri https://localhost:7190/internal/minikms/service-auth/keys `
+  -Headers $headers `
+  -Body (@{ keyVersion = "svcjwt-v2"; activate = $false } | ConvertTo-Json) `
+  -ContentType "application/json"
+```
+
+Activate it:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri https://localhost:7190/internal/minikms/service-auth/keys/svcjwt-v2/activate `
+  -Headers $headers
+```
+
+The API will begin issuing new bearer tokens with the new active signing key version once it observes the updated MiniKMS-managed JWT key state.
+
 ## Notes
 
 - `ActiveKeyVersion` remains explicit in the API config so the host can expose it in `/health` and use it as the default key version for new secrets.
 - `MasterKeys` are only used by the local provider path in the main API. In remote mode, the actual wrapping keys live in the MiniKMS service process.
 - The API-to-MiniKMS trust path now uses signed internal JWT/service tokens rather than a shared static API key.
+- The internal JWT signing keys can now be externalized from appsettings into MiniKMS-managed state and rotated independently from the HMAC secret-wrapping master keys.
 - In normal mode, MiniKMS persists key-ring state and audit history through the configured provider. `File` is the default local option, while `SqlServer` and `Postgres` are the intended durable deployment targets.
+- In `MiniKmsState` mode, both the MiniKMS service and the main API must point at the same internal JWT managed-state provider so the API signs with the active MiniKMS-managed service-auth key version.
 - MiniKMS key states are currently `Active`, `Available`, and `Retired`. Retired keys are decrypt-only.
 - Future implementations such as Windows Certificate Store or DPAPI-backed providers can still be added without changing the application-layer contracts.

@@ -602,11 +602,6 @@ static void ValidateMiniKmsInternalJwtOptions(MiniKmsInternalJwtOptions options,
         throw new InvalidOperationException($"{configPath}:Audience must be configured.");
     }
 
-    if (string.IsNullOrWhiteSpace(options.SigningKey) || Encoding.UTF8.GetByteCount(options.SigningKey) < 32)
-    {
-        throw new InvalidOperationException($"{configPath}:SigningKey must be configured and be at least 32 bytes long.");
-    }
-
     if (string.IsNullOrWhiteSpace(options.Subject))
     {
         throw new InvalidOperationException($"{configPath}:Subject must be configured.");
@@ -615,6 +610,21 @@ static void ValidateMiniKmsInternalJwtOptions(MiniKmsInternalJwtOptions options,
     if (options.TokenLifetimeMinutes <= 0)
     {
         throw new InvalidOperationException($"{configPath}:TokenLifetimeMinutes must be greater than zero.");
+    }
+
+    if (string.Equals(options.KeySource, MiniKmsInternalJwtOptions.ConfigSource, StringComparison.OrdinalIgnoreCase))
+    {
+        if (string.IsNullOrWhiteSpace(options.SigningKey) || Encoding.UTF8.GetByteCount(options.SigningKey) < 32)
+        {
+            throw new InvalidOperationException($"{configPath}:SigningKey must be configured and be at least 32 bytes long when KeySource is Config.");
+        }
+
+        return;
+    }
+
+    if (!string.Equals(options.KeySource, MiniKmsInternalJwtOptions.ManagedStateSource, StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException($"{configPath}:KeySource must be either '{MiniKmsInternalJwtOptions.ConfigSource}' or '{MiniKmsInternalJwtOptions.ManagedStateSource}'.");
     }
 }
 

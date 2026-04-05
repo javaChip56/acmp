@@ -17,21 +17,12 @@ namespace MyCompany.AuthPlatform.Api.IntegrationTests;
 
 public sealed class MiniKmsIntegrationTests
 {
-    private static readonly MiniKmsInternalJwtOptions IntegrationJwtOptions = new()
-    {
-        Issuer = "acmp-internal-services",
-        Audience = "mini-kms-internal",
-        SigningKey = "AcmpMiniKmsInternalSigningKey123456789!",
-        Subject = "acmp-api",
-        TokenLifetimeMinutes = 5
-    };
-
     [Fact]
     public void RemoteMiniKmsClient_RoundTripsSecretAgainstMiniKmsService()
     {
         using var factory = new MiniKmsFactory();
         using var httpClient = factory.CreateClient();
-        var remoteMiniKms = new RemoteMiniKmsClient(httpClient, IntegrationJwtOptions);
+        var remoteMiniKms = new RemoteMiniKmsClient(httpClient, factory.InternalJwtOptions);
 
         var secret = remoteMiniKms.GenerateRandomSecret();
         var encrypted = remoteMiniKms.Encrypt(secret);
@@ -77,19 +68,19 @@ public sealed class MiniKmsIntegrationTests
         {
             Content = JsonContent.Create(new CreateKeyVersionRequest("kms-v2", null, false))
         };
-        AuthorizeMiniKmsRequest(createRequest);
+        AuthorizeMiniKmsRequest(createRequest, factory.InternalJwtOptions);
 
         var createResponse = await client.SendAsync(createRequest);
         createResponse.EnsureSuccessStatusCode();
 
         var activateRequest = new HttpRequestMessage(HttpMethod.Post, "/internal/minikms/keys/kms-v2/activate");
-        AuthorizeMiniKmsRequest(activateRequest);
+        AuthorizeMiniKmsRequest(activateRequest, factory.InternalJwtOptions);
 
         var activateResponse = await client.SendAsync(activateRequest);
         activateResponse.EnsureSuccessStatusCode();
 
         var keysRequest = new HttpRequestMessage(HttpMethod.Get, "/internal/minikms/keys");
-        AuthorizeMiniKmsRequest(keysRequest);
+        AuthorizeMiniKmsRequest(keysRequest, factory.InternalJwtOptions);
 
         var keysResponse = await client.SendAsync(keysRequest);
         keysResponse.EnsureSuccessStatusCode();
@@ -111,7 +102,7 @@ public sealed class MiniKmsIntegrationTests
         {
             Content = JsonContent.Create(new CreateKeyVersionRequest("kms-v2", null, true))
         };
-        AuthorizeMiniKmsRequest(rotateRequest);
+        AuthorizeMiniKmsRequest(rotateRequest, factory.InternalJwtOptions);
         var rotateResponse = await factory.MiniKmsClient.SendAsync(rotateRequest);
         rotateResponse.EnsureSuccessStatusCode();
 
@@ -132,23 +123,23 @@ public sealed class MiniKmsIntegrationTests
         {
             Content = JsonContent.Create(new CreateKeyVersionRequest("kms-v2", null, false))
         };
-        AuthorizeMiniKmsRequest(createRequest, "ops-user");
+        AuthorizeMiniKmsRequest(createRequest, factory.InternalJwtOptions, "ops-user");
         var createResponse = await client.SendAsync(createRequest);
         createResponse.EnsureSuccessStatusCode();
 
         var retireRequest = new HttpRequestMessage(HttpMethod.Post, "/internal/minikms/keys/kms-v2/retire");
-        AuthorizeMiniKmsRequest(retireRequest, "ops-user");
+        AuthorizeMiniKmsRequest(retireRequest, factory.InternalJwtOptions, "ops-user");
         var retireResponse = await client.SendAsync(retireRequest);
         retireResponse.EnsureSuccessStatusCode();
 
         var keysRequest = new HttpRequestMessage(HttpMethod.Get, "/internal/minikms/keys");
-        AuthorizeMiniKmsRequest(keysRequest);
+        AuthorizeMiniKmsRequest(keysRequest, factory.InternalJwtOptions);
         var keysResponse = await client.SendAsync(keysRequest);
         keysResponse.EnsureSuccessStatusCode();
         var keys = await keysResponse.Content.ReadFromJsonAsync<MiniKmsKeyVersionSummary[]>();
 
         var auditRequest = new HttpRequestMessage(HttpMethod.Get, "/internal/minikms/audit?take=10");
-        AuthorizeMiniKmsRequest(auditRequest);
+        AuthorizeMiniKmsRequest(auditRequest, factory.InternalJwtOptions);
         var auditResponse = await client.SendAsync(auditRequest);
         auditResponse.EnsureSuccessStatusCode();
         var auditEntries = await auditResponse.Content.ReadFromJsonAsync<MiniKmsAuditEntry[]>();
@@ -167,7 +158,7 @@ public sealed class MiniKmsIntegrationTests
         using var client = factory.CreateClient();
 
         var retireRequest = new HttpRequestMessage(HttpMethod.Post, "/internal/minikms/keys/kms-v1/retire");
-        AuthorizeMiniKmsRequest(retireRequest);
+        AuthorizeMiniKmsRequest(retireRequest, factory.InternalJwtOptions);
         var retireResponse = await client.SendAsync(retireRequest);
 
         Assert.Equal(HttpStatusCode.Conflict, retireResponse.StatusCode);
@@ -187,7 +178,7 @@ public sealed class MiniKmsIntegrationTests
                 {
                     Content = JsonContent.Create(new CreateKeyVersionRequest("kms-v3", null, true))
                 };
-                AuthorizeMiniKmsRequest(createRequest);
+                AuthorizeMiniKmsRequest(createRequest, firstFactory.InternalJwtOptions);
                 var createResponse = await firstClient.SendAsync(createRequest);
                 createResponse.EnsureSuccessStatusCode();
             }
@@ -196,7 +187,7 @@ public sealed class MiniKmsIntegrationTests
             using var secondClient = secondFactory.CreateClient();
 
             var keysRequest = new HttpRequestMessage(HttpMethod.Get, "/internal/minikms/keys");
-            AuthorizeMiniKmsRequest(keysRequest);
+            AuthorizeMiniKmsRequest(keysRequest, secondFactory.InternalJwtOptions);
             var keysResponse = await secondClient.SendAsync(keysRequest);
             keysResponse.EnsureSuccessStatusCode();
             var keys = await keysResponse.Content.ReadFromJsonAsync<MiniKmsKeyVersionSummary[]>();
@@ -227,7 +218,7 @@ public sealed class MiniKmsIntegrationTests
             {
                 Content = JsonContent.Create(new CreateKeyVersionRequest("kms-demo-2", null, true))
             };
-            AuthorizeMiniKmsRequest(createRequest);
+            AuthorizeMiniKmsRequest(createRequest, firstFactory.InternalJwtOptions);
             var createResponse = await firstClient.SendAsync(createRequest);
             createResponse.EnsureSuccessStatusCode();
         }
@@ -236,7 +227,7 @@ public sealed class MiniKmsIntegrationTests
         using var secondClient = secondFactory.CreateClient();
 
         var keysRequest = new HttpRequestMessage(HttpMethod.Get, "/internal/minikms/keys");
-        AuthorizeMiniKmsRequest(keysRequest);
+        AuthorizeMiniKmsRequest(keysRequest, secondFactory.InternalJwtOptions);
         var keysResponse = await secondClient.SendAsync(keysRequest);
         keysResponse.EnsureSuccessStatusCode();
         var keys = await keysResponse.Content.ReadFromJsonAsync<MiniKmsKeyVersionSummary[]>();
@@ -252,8 +243,10 @@ public sealed class MiniKmsIntegrationTests
     private sealed class MiniKmsFactory : WebApplicationFactory<MiniKmsEntryPoint>
     {
         private readonly string? _stateFilePath;
+        private readonly string? _jwtStateFilePath;
         private readonly bool _demoModeEnabled;
         private readonly bool _ownsStateFilePath;
+        private readonly bool _ownsJwtStateFilePath;
 
         public MiniKmsFactory(string? stateFilePath = null, bool demoModeEnabled = false)
         {
@@ -268,7 +261,12 @@ public sealed class MiniKmsIntegrationTests
                 _stateFilePath = stateFilePath;
                 _ownsStateFilePath = false;
             }
+
+            _jwtStateFilePath = Path.Combine(Path.GetTempPath(), $"acmp-minikms-jwt-test-{Guid.NewGuid():N}.json");
+            _ownsJwtStateFilePath = true;
         }
+
+        public MiniKmsInternalJwtOptions InternalJwtOptions => CreateIntegrationJwtOptions(_jwtStateFilePath!);
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -279,11 +277,15 @@ public sealed class MiniKmsIntegrationTests
                 {
                     ["MiniKms:DemoModeEnabled"] = _demoModeEnabled.ToString(),
                     ["MiniKms:ActiveKeyVersion"] = "kms-v1",
-                    ["MiniKms:InternalJwt:Issuer"] = IntegrationJwtOptions.Issuer,
-                    ["MiniKms:InternalJwt:Audience"] = IntegrationJwtOptions.Audience,
-                    ["MiniKms:InternalJwt:SigningKey"] = IntegrationJwtOptions.SigningKey,
-                    ["MiniKms:InternalJwt:Subject"] = IntegrationJwtOptions.Subject,
-                    ["MiniKms:InternalJwt:TokenLifetimeMinutes"] = IntegrationJwtOptions.TokenLifetimeMinutes.ToString(),
+                    ["MiniKms:InternalJwt:KeySource"] = MiniKmsInternalJwtOptions.ManagedStateSource,
+                    ["MiniKms:InternalJwt:Issuer"] = "acmp-internal-services",
+                    ["MiniKms:InternalJwt:Audience"] = "mini-kms-internal",
+                    ["MiniKms:InternalJwt:ActiveKeyVersion"] = "svcjwt-v1",
+                    ["MiniKms:InternalJwt:SigningKey"] = "MDEyMzQ1Njc4OUFCQ0RFRjAxMjM0NTY3ODlBQkNERUY=",
+                    ["MiniKms:InternalJwt:Subject"] = "acmp-api",
+                    ["MiniKms:InternalJwt:TokenLifetimeMinutes"] = "5",
+                    ["MiniKms:InternalJwt:ManagedState:Provider"] = "File",
+                    ["MiniKms:InternalJwt:ManagedState:StateFilePath"] = _jwtStateFilePath,
                     ["MiniKms:MasterKeys:kms-v1"] = "QWNtcFNlY3JldE1hc3RlcktleUZvckttc3YxIUFCQ0Q="
                 };
 
@@ -304,6 +306,11 @@ public sealed class MiniKmsIntegrationTests
             {
                 File.Delete(_stateFilePath);
             }
+
+            if (disposing && _ownsJwtStateFilePath && !string.IsNullOrWhiteSpace(_jwtStateFilePath) && File.Exists(_jwtStateFilePath))
+            {
+                File.Delete(_jwtStateFilePath);
+            }
         }
     }
 
@@ -319,6 +326,8 @@ public sealed class MiniKmsIntegrationTests
 
         public HttpClient MiniKmsClient => _miniKmsClient;
 
+        public MiniKmsInternalJwtOptions InternalJwtOptions => _miniKmsFactory.InternalJwtOptions;
+
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Development");
@@ -333,11 +342,14 @@ public sealed class MiniKmsIntegrationTests
                     ["MiniKms:ActiveKeyVersion"] = "kms-v1",
                     ["MiniKms:Remote:BaseUrl"] = "https://localhost:7190",
                     ["MiniKms:Remote:TimeoutSeconds"] = "15",
-                    ["MiniKms:Remote:InternalJwt:Issuer"] = IntegrationJwtOptions.Issuer,
-                    ["MiniKms:Remote:InternalJwt:Audience"] = IntegrationJwtOptions.Audience,
-                    ["MiniKms:Remote:InternalJwt:SigningKey"] = IntegrationJwtOptions.SigningKey,
-                    ["MiniKms:Remote:InternalJwt:Subject"] = IntegrationJwtOptions.Subject,
-                    ["MiniKms:Remote:InternalJwt:TokenLifetimeMinutes"] = IntegrationJwtOptions.TokenLifetimeMinutes.ToString()
+                    ["MiniKms:Remote:InternalJwt:KeySource"] = _miniKmsFactory.InternalJwtOptions.KeySource,
+                    ["MiniKms:Remote:InternalJwt:Issuer"] = _miniKmsFactory.InternalJwtOptions.Issuer,
+                    ["MiniKms:Remote:InternalJwt:Audience"] = _miniKmsFactory.InternalJwtOptions.Audience,
+                    ["MiniKms:Remote:InternalJwt:ActiveKeyVersion"] = _miniKmsFactory.InternalJwtOptions.ActiveKeyVersion,
+                    ["MiniKms:Remote:InternalJwt:Subject"] = _miniKmsFactory.InternalJwtOptions.Subject,
+                    ["MiniKms:Remote:InternalJwt:TokenLifetimeMinutes"] = _miniKmsFactory.InternalJwtOptions.TokenLifetimeMinutes.ToString(),
+                    ["MiniKms:Remote:InternalJwt:ManagedState:Provider"] = _miniKmsFactory.InternalJwtOptions.ManagedState.Provider,
+                    ["MiniKms:Remote:InternalJwt:ManagedState:StateFilePath"] = _miniKmsFactory.InternalJwtOptions.ManagedState.StateFilePath
                 });
             });
             builder.ConfigureServices(services =>
@@ -345,7 +357,7 @@ public sealed class MiniKmsIntegrationTests
                 services.RemoveAll<IMiniKms>();
                 services.RemoveAll<IHmacSecretProtector>();
                 services.AddSingleton<IMiniKms>(_ =>
-                    new RemoteMiniKmsClient(MiniKmsClient, IntegrationJwtOptions));
+                    new RemoteMiniKmsClient(MiniKmsClient, _miniKmsFactory.InternalJwtOptions));
                 services.AddSingleton<IHmacSecretProtector>(serviceProvider =>
                     new MiniKmsHmacSecretProtector(serviceProvider.GetRequiredService<IMiniKms>()));
             });
@@ -363,10 +375,29 @@ public sealed class MiniKmsIntegrationTests
         }
     }
 
-    private static void AuthorizeMiniKmsRequest(HttpRequestMessage request, string subject = "acmp-api")
+    private static void AuthorizeMiniKmsRequest(HttpRequestMessage request, MiniKmsInternalJwtOptions jwtOptions, string subject = "acmp-api")
     {
         request.Headers.Authorization = new AuthenticationHeaderValue(
             "Bearer",
-            MiniKmsInternalJwtTokenProvider.CreateToken(IntegrationJwtOptions, subject));
+            MiniKmsInternalJwtTokenProvider.CreateToken(jwtOptions, subject));
+    }
+
+    private static MiniKmsInternalJwtOptions CreateIntegrationJwtOptions(string stateFilePath)
+    {
+        return new MiniKmsInternalJwtOptions
+        {
+            KeySource = MiniKmsInternalJwtOptions.ManagedStateSource,
+            Issuer = "acmp-internal-services",
+            Audience = "mini-kms-internal",
+            ActiveKeyVersion = "svcjwt-v1",
+            SigningKey = "MDEyMzQ1Njc4OUFCQ0RFRjAxMjM0NTY3ODlBQkNERUY=",
+            Subject = "acmp-api",
+            TokenLifetimeMinutes = 5,
+            ManagedState = new MiniKmsInternalJwtManagedStateOptions
+            {
+                Provider = MiniKmsInternalJwtManagedStateOptions.FileProvider,
+                StateFilePath = stateFilePath
+            }
+        };
     }
 }
