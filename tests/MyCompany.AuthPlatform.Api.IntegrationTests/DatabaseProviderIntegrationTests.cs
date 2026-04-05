@@ -3,10 +3,8 @@ using System.Net.Http.Headers;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using MyCompany.AuthPlatform.Api;
-using Npgsql;
 using Xunit;
 
 namespace MyCompany.AuthPlatform.Api.IntegrationTests;
@@ -17,14 +15,14 @@ public sealed class DatabaseProviderIntegrationTests
     [Trait("Category", "SqlServer")]
     public async Task SqlServer_HostStartsAndServesSeededData()
     {
-        if (!DatabaseIntegrationSettings.ShouldRun)
+        if (!DatabaseIntegrationSupport.ShouldRun)
         {
             return;
         }
 
-        var masterConnectionString = DatabaseIntegrationSettings.GetRequired("SQLSERVER_TEST_CONNECTION_STRING");
+        var masterConnectionString = DatabaseIntegrationSupport.GetRequired("SQLSERVER_TEST_CONNECTION_STRING");
         var databaseName = $"acmp_sql_{Guid.NewGuid():N}";
-        var connectionString = BuildSqlServerConnectionString(masterConnectionString, databaseName);
+        var connectionString = DatabaseIntegrationSupport.BuildSqlServerConnectionString(masterConnectionString, databaseName);
 
         using var factory = new ConfiguredApiFactory(new Dictionary<string, string?>
         {
@@ -58,16 +56,16 @@ public sealed class DatabaseProviderIntegrationTests
     [Trait("Category", "Postgres")]
     public async Task Postgres_HostStartsAndServesSeededData()
     {
-        if (!DatabaseIntegrationSettings.ShouldRun)
+        if (!DatabaseIntegrationSupport.ShouldRun)
         {
             return;
         }
 
-        var adminConnectionString = DatabaseIntegrationSettings.GetRequired("POSTGRES_ADMIN_CONNECTION_STRING");
+        var adminConnectionString = DatabaseIntegrationSupport.GetRequired("POSTGRES_ADMIN_CONNECTION_STRING");
         var databaseName = $"acmp_pg_{Guid.NewGuid():N}";
-        await CreatePostgresDatabaseAsync(adminConnectionString, databaseName);
+        await DatabaseIntegrationSupport.CreatePostgresDatabaseAsync(adminConnectionString, databaseName);
 
-        var connectionString = BuildPostgresConnectionString(adminConnectionString, databaseName);
+        var connectionString = DatabaseIntegrationSupport.BuildPostgresConnectionString(adminConnectionString, databaseName);
 
         using var factory = new ConfiguredApiFactory(new Dictionary<string, string?>
         {
@@ -118,38 +116,6 @@ public sealed class DatabaseProviderIntegrationTests
         return client.SendAsync(request);
     }
 
-    private static async Task CreatePostgresDatabaseAsync(string adminConnectionString, string databaseName)
-    {
-        await using var connection = new NpgsqlConnection(adminConnectionString);
-        await connection.OpenAsync();
-
-        await using var command = connection.CreateCommand();
-        command.CommandText = $"CREATE DATABASE \"{databaseName}\"";
-        await command.ExecuteNonQueryAsync();
-    }
-
-    private static string BuildSqlServerConnectionString(string masterConnectionString, string databaseName)
-    {
-        var builder = new SqlConnectionStringBuilder(masterConnectionString)
-        {
-            InitialCatalog = databaseName,
-            Encrypt = false,
-            TrustServerCertificate = true
-        };
-
-        return builder.ConnectionString;
-    }
-
-    private static string BuildPostgresConnectionString(string adminConnectionString, string databaseName)
-    {
-        var builder = new NpgsqlConnectionStringBuilder(adminConnectionString)
-        {
-            Database = databaseName
-        };
-
-        return builder.ConnectionString;
-    }
-
     private sealed class ConfiguredApiFactory : WebApplicationFactory<ApiEntryPoint>
     {
         private readonly IEnumerable<KeyValuePair<string, string?>> _overrides;
@@ -166,26 +132,6 @@ public sealed class DatabaseProviderIntegrationTests
             {
                 configBuilder.AddInMemoryCollection(_overrides);
             });
-        }
-    }
-
-    private static class DatabaseIntegrationSettings
-    {
-        public static bool ShouldRun =>
-            string.Equals(
-                Environment.GetEnvironmentVariable("RUN_DATABASE_INTEGRATION_TESTS"),
-                "true",
-                StringComparison.OrdinalIgnoreCase);
-
-        public static string GetRequired(string name)
-        {
-            var value = Environment.GetEnvironmentVariable(name);
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                throw new InvalidOperationException($"Environment variable '{name}' must be configured for database integration tests.");
-            }
-
-            return value;
         }
     }
 }
