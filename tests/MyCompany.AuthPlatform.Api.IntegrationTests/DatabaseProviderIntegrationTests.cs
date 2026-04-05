@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
+using MyCompany.AuthPlatform.Api;
 using Npgsql;
 using Xunit;
 
@@ -149,7 +150,7 @@ public sealed class DatabaseProviderIntegrationTests
         return builder.ConnectionString;
     }
 
-    private sealed class ConfiguredApiFactory : WebApplicationFactory<Program>
+    private sealed class ConfiguredApiFactory : WebApplicationFactory<ApiEntryPoint>
     {
         private readonly IEnumerable<KeyValuePair<string, string?>> _overrides;
 

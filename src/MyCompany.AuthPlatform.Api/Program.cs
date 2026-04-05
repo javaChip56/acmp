@@ -13,6 +13,7 @@ using MyCompany.AuthPlatform.Persistence.Abstractions;
 using MyCompany.AuthPlatform.Persistence.InMemory;
 using MyCompany.AuthPlatform.Persistence.Postgres;
 using MyCompany.AuthPlatform.Persistence.SqlServer;
+using MyCompany.Security.MiniKms.Client;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -38,12 +39,6 @@ var miniKmsOptions = builder.Configuration
     .GetSection(MiniKmsOptions.SectionName)
     .Get<MiniKmsOptions>()
     ?? new MiniKmsOptions();
-
-if (!string.Equals(miniKmsOptions.Provider, MiniKmsOptions.LocalProvider, StringComparison.OrdinalIgnoreCase))
-{
-    throw new InvalidOperationException(
-        $"MiniKms:Provider '{miniKmsOptions.Provider}' is not supported. Use '{MiniKmsOptions.LocalProvider}'.");
-}
 
 var authenticationBuilder = builder.Services.AddAuthentication(options =>
 {
@@ -136,7 +131,34 @@ builder.Services.AddSingleton<IMasterKeyProvider>(serviceProvider =>
         StringComparer.Ordinal);
     return new ConfiguredMasterKeyProvider(keys, options.ActiveKeyVersion);
 });
-builder.Services.AddSingleton<IMiniKms, LocalMiniKms>();
+builder.Services.AddSingleton<LocalMiniKms>();
+builder.Services.AddHttpClient(RemoteMiniKmsClient.HttpClientName, (serviceProvider, client) =>
+{
+    var options = serviceProvider.GetRequiredService<IOptions<MiniKmsOptions>>().Value;
+    client.BaseAddress = new Uri(options.Remote.BaseUrl, UriKind.Absolute);
+    client.Timeout = TimeSpan.FromSeconds(options.Remote.TimeoutSeconds);
+});
+builder.Services.AddSingleton<IMiniKms>(serviceProvider =>
+{
+    var options = serviceProvider.GetRequiredService<IOptions<MiniKmsOptions>>().Value;
+    if (string.Equals(options.Provider, MiniKmsOptions.LocalProvider, StringComparison.OrdinalIgnoreCase))
+    {
+        return serviceProvider.GetRequiredService<LocalMiniKms>();
+    }
+
+    if (string.Equals(options.Provider, MiniKmsOptions.RemoteProvider, StringComparison.OrdinalIgnoreCase))
+    {
+        ValidateRemoteMiniKmsOptions(options.Remote);
+        var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
+        return new RemoteMiniKmsClient(
+            httpClientFactory.CreateClient(RemoteMiniKmsClient.HttpClientName),
+            options.Remote.ApiKey,
+            options.ActiveKeyVersion);
+    }
+
+    throw new InvalidOperationException(
+        $"MiniKms:Provider '{options.Provider}' is not supported. Use '{MiniKmsOptions.LocalProvider}' or '{MiniKmsOptions.RemoteProvider}'.");
+});
 builder.Services.AddSingleton<IHmacSecretProtector>(serviceProvider =>
     new MiniKmsHmacSecretProtector(serviceProvider.GetRequiredService<IMiniKms>()));
 builder.Services.AddScoped<IAuthPlatformUnitOfWork>(serviceProvider =>
@@ -184,7 +206,6 @@ app.UseAuthorization();
 
 var persistence = app.Services.GetRequiredService<IOptions<PersistenceOptions>>().Value;
 var miniKms = app.Services.GetRequiredService<IMiniKms>();
-var masterKeyProvider = app.Services.GetRequiredService<IMasterKeyProvider>();
 if (!string.Equals(persistence.Provider, PersistenceOptions.InMemoryDemoProvider, StringComparison.OrdinalIgnoreCase) &&
     !string.Equals(persistence.Provider, PersistenceOptions.SqlServerProvider, StringComparison.OrdinalIgnoreCase) &&
     !string.Equals(persistence.Provider, PersistenceOptions.PostgresProvider, StringComparison.OrdinalIgnoreCase))
@@ -216,7 +237,7 @@ app.MapGet("/health", (IOptions<PersistenceOptions> persistenceOptions) =>
         "Healthy",
         persistenceOptions.Value.Provider,
         miniKms.ProviderName,
-        masterKeyProvider.GetActiveKeyVersion()));
+        miniKms.ActiveKeyVersion));
 })
 .WithName("GetHealth")
 .WithOpenApi();
@@ -523,6 +544,29 @@ static void ValidateEmbeddedIdentityOptions(EmbeddedIdentityAuthOptions options)
         throw new InvalidOperationException("Authentication:EmbeddedIdentity:SigningKey must be configured and at least 32 bytes long when Authentication:Mode is EmbeddedIdentity.");
     }
 
+}
+
+static void ValidateRemoteMiniKmsOptions(RemoteMiniKmsOptions options)
+{
+    if (string.IsNullOrWhiteSpace(options.BaseUrl))
+    {
+        throw new InvalidOperationException("MiniKms:Remote:BaseUrl must be configured when MiniKms:Provider is RemoteMiniKms.");
+    }
+
+    if (!Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out _))
+    {
+        throw new InvalidOperationException("MiniKms:Remote:BaseUrl must be a valid absolute URI when MiniKms:Provider is RemoteMiniKms.");
+    }
+
+    if (string.IsNullOrWhiteSpace(options.ApiKey))
+    {
+        throw new InvalidOperationException("MiniKms:Remote:ApiKey must be configured when MiniKms:Provider is RemoteMiniKms.");
+    }
+
+    if (options.TimeoutSeconds <= 0)
+    {
+        throw new InvalidOperationException("MiniKms:Remote:TimeoutSeconds must be greater than zero when MiniKms:Provider is RemoteMiniKms.");
+    }
 }
 
 static void ConfigureLocalJwtBearer(JwtBearerOptions options, EmbeddedIdentityAuthOptions embeddedIdentityOptions, string challengeMessage)

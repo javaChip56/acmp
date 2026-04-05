@@ -31,6 +31,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyCompany.AuthPlatform.Hmac
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyCompany.AuthPlatform.Hmac.Tests", "tests\MyCompany.AuthPlatform.Hmac.Tests\MyCompany.AuthPlatform.Hmac.Tests.csproj", "{E5BD517E-809E-4594-912C-CFEB7CA9A353}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyCompany.Security.MiniKms.Client", "src\MyCompany.Security.MiniKms.Client\MyCompany.Security.MiniKms.Client.csproj", "{24F703B4-9254-4C4B-87B6-556C1C276426}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyCompany.Security.MiniKms", "src\MyCompany.Security.MiniKms\MyCompany.Security.MiniKms.csproj", "{BC4F4E9F-3EE4-4B02-8150-77200E2C1E62}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -88,6 +92,14 @@ Global
 		{E5BD517E-809E-4594-912C-CFEB7CA9A353}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E5BD517E-809E-4594-912C-CFEB7CA9A353}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E5BD517E-809E-4594-912C-CFEB7CA9A353}.Release|Any CPU.Build.0 = Release|Any CPU
+		{24F703B4-9254-4C4B-87B6-556C1C276426}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{24F703B4-9254-4C4B-87B6-556C1C276426}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{24F703B4-9254-4C4B-87B6-556C1C276426}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{24F703B4-9254-4C4B-87B6-556C1C276426}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BC4F4E9F-3EE4-4B02-8150-77200E2C1E62}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BC4F4E9F-3EE4-4B02-8150-77200E2C1E62}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BC4F4E9F-3EE4-4B02-8150-77200E2C1E62}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BC4F4E9F-3EE4-4B02-8150-77200E2C1E62}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{72BD4EFB-97D3-40F5-85BF-E1D426A6A97D} = {D9D40F59-3D60-4215-89B9-7053C3E8C4F5}
@@ -102,5 +114,7 @@ Global
 		{DF391876-BED5-4901-961A-37376525A9DD} = {D9D40F59-3D60-4215-89B9-7053C3E8C4F5}
 		{A101C6DB-1C74-49D1-BDD4-44F935F578BF} = {D9D40F59-3D60-4215-89B9-7053C3E8C4F5}
 		{E5BD517E-809E-4594-912C-CFEB7CA9A353} = {BFCB53D8-A990-4E45-B7BE-726B3D05A766}
+		{24F703B4-9254-4C4B-87B6-556C1C276426} = {D9D40F59-3D60-4215-89B9-7053C3E8C4F5}
+		{BC4F4E9F-3EE4-4B02-8150-77200E2C1E62} = {D9D40F59-3D60-4215-89B9-7053C3E8C4F5}
 	EndGlobalSection
 EndGlobal

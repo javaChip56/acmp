@@ -25,6 +25,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\MyCompany.AuthPlatform.Api\MyCompany.AuthPlatform.Api.csproj" />
+    <ProjectReference Include="..\..\src\MyCompany.Security.MiniKms\MyCompany.Security.MiniKms.csproj" />
+    <ProjectReference Include="..\..\src\MyCompany.Security.MiniKms.Client\MyCompany.Security.MiniKms.Client.csproj" />
   </ItemGroup>
 
 </Project>

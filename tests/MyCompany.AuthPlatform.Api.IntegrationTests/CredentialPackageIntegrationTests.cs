@@ -10,6 +10,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using MyCompany.AuthPlatform.Application;
+using MyCompany.AuthPlatform.Api;
 using MyCompany.AuthPlatform.Packaging;
 using Xunit;
 
@@ -174,7 +175,7 @@ public sealed class CredentialPackageIntegrationTests
         return client.SendAsync(request);
     }
 
-    private sealed class PackageConfiguredApiFactory : WebApplicationFactory<Program>
+    private sealed class PackageConfiguredApiFactory : WebApplicationFactory<ApiEntryPoint>
     {
         private readonly X509Certificate2 _certificate;
 

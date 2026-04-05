@@ -31,6 +31,8 @@ public interface IMiniKms
 {
     string ProviderName { get; }
 
+    string ActiveKeyVersion { get; }
+
     byte[] GenerateRandomSecret(int sizeInBytes = 32);
 
     EncryptedSecretPackage Encrypt(byte[] plaintext, string? keyVersion = null);
@@ -167,6 +169,8 @@ public sealed class LocalMiniKms : IMiniKms
 
     public string ProviderName => "LocalMiniKms";
 
+    public string ActiveKeyVersion => _masterKeyProvider.GetActiveKeyVersion();
+
     public byte[] GenerateRandomSecret(int sizeInBytes = 32)
     {
         if (sizeInBytes <= 0)
@@ -187,7 +191,7 @@ public sealed class LocalMiniKms : IMiniKms
         }
 
         var resolvedKeyVersion = string.IsNullOrWhiteSpace(keyVersion)
-            ? _masterKeyProvider.GetActiveKeyVersion()
+            ? ActiveKeyVersion
             : keyVersion.Trim();
         var contentEncryptionKey = RandomNumberGenerator.GetBytes(32);
         var nonce = RandomNumberGenerator.GetBytes(NonceSize);

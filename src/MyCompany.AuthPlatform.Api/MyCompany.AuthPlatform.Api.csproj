@@ -24,6 +24,7 @@
     <ProjectReference Include="..\MyCompany.AuthPlatform.Packaging\MyCompany.AuthPlatform.Packaging.csproj" />
     <ProjectReference Include="..\MyCompany.AuthPlatform.Persistence.SqlServer\MyCompany.AuthPlatform.Persistence.SqlServer.csproj" />
     <ProjectReference Include="..\MyCompany.AuthPlatform.Application\MyCompany.AuthPlatform.Application.csproj" />
+    <ProjectReference Include="..\MyCompany.Security.MiniKms.Client\MyCompany.Security.MiniKms.Client.csproj" />
   </ItemGroup>
 
 </Project>
