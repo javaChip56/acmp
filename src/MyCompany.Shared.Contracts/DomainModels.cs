@@ -53,6 +53,13 @@ public enum AdminUserStatus
     Disabled = 2,
 }
 
+public enum RecipientProtectionBindingStatus
+{
+    Active = 1,
+    Retired = 2,
+    Revoked = 3,
+}
+
 public sealed class ServiceClient
 {
     public Guid ClientId { get; set; }
@@ -111,6 +118,33 @@ public sealed class HmacCredentialDetail
     public byte[]? Iv { get; set; }
     public byte[]? Tag { get; set; }
     public DateTimeOffset? LastUsedAt { get; set; }
+}
+
+public sealed class RecipientProtectionBinding
+{
+    public Guid BindingId { get; set; }
+    public Guid ClientId { get; set; }
+    public string BindingName { get; set; } = string.Empty;
+    public string BindingType { get; set; } = string.Empty;
+    public RecipientProtectionBindingStatus Status { get; set; } = RecipientProtectionBindingStatus.Active;
+    public string Algorithm { get; set; } = string.Empty;
+    public string? PublicKeyPem { get; set; }
+    public string? PublicKeyFingerprint { get; set; }
+    public string? CertificateThumbprint { get; set; }
+    public string? StoreLocation { get; set; }
+    public string? StoreName { get; set; }
+    public string? CertificatePath { get; set; }
+    public string? PrivateKeyPathHint { get; set; }
+    public string? KeyId { get; set; }
+    public string? KeyVersion { get; set; }
+    public DateTimeOffset? ActivatedAt { get; set; }
+    public DateTimeOffset? RetiredAt { get; set; }
+    public string? Notes { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public string CreatedBy { get; set; } = string.Empty;
+    public DateTimeOffset UpdatedAt { get; set; }
+    public string UpdatedBy { get; set; } = string.Empty;
+    public string? ConcurrencyToken { get; set; }
 }
 
 public sealed class AuditLogEntry

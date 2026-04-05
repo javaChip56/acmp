@@ -18,6 +18,7 @@ namespace MyCompany.AuthPlatform.Api.IntegrationTests;
 
 public sealed class CredentialPackageIntegrationTests
 {
+    private static readonly Guid SeededOrdersClientId = Guid.Parse("1f4a8ec5-31f6-4df8-8b7d-6c22f4f9d0a1");
     private static readonly Guid SeededActiveCredentialId = Guid.Parse("bd0dd9fc-90d2-4dc8-a99e-5f5d65d8b041");
 
     [Fact]
@@ -108,6 +109,67 @@ public sealed class CredentialPackageIntegrationTests
                 string.Equals(entry["targetId"]?.GetValue<string>(), SeededActiveCredentialId.ToString(), StringComparison.Ordinal));
 
         Assert.NotNull(packageAuditEntry);
+    }
+
+    [Fact]
+    public async Task CreateRecipientBinding_AndIssuePackageByBindingId_Succeeds()
+    {
+        using var certificate = CreateCertificate();
+        using var factory = new PackageConfiguredApiFactory(certificate);
+        using var client = factory.CreateClient();
+        var token = await IssueTokenAsync(client, "operator.demo", "OperatorPass!123");
+
+        var createBindingResponse = await SendAuthorizedPostAsync(
+            client,
+            $"/api/clients/{SeededOrdersClientId}/recipient-bindings",
+            new
+            {
+                bindingName = "orders-api-store-binding",
+                bindingType = "X509StoreThumbprint",
+                algorithm = "RSA-2048",
+                publicKeyPem = (string?)null,
+                certificateThumbprint = certificate.Thumbprint,
+                storeLocation = "CurrentUser",
+                storeName = "My",
+                certificatePath = (string?)null,
+                privateKeyPathHint = (string?)null,
+                keyId = (string?)null,
+                keyVersion = (string?)null,
+                notes = "Integration test binding"
+            },
+            token);
+
+        createBindingResponse.EnsureSuccessStatusCode();
+        var bindingPayload = await createBindingResponse.Content.ReadFromJsonAsync<JsonObject>();
+        var bindingId = bindingPayload?["bindingId"]?.GetValue<Guid>()
+            ?? throw new InvalidOperationException("Binding id was not returned by the API.");
+
+        var issuePackageResponse = await SendAuthorizedPostAsync(
+            client,
+            $"/api/credentials/{SeededActiveCredentialId}/issue-encrypted-package",
+            new
+            {
+                recipientBindingId = bindingId,
+                bindingType = "X509StoreThumbprint",
+                certificateThumbprint = (string?)null,
+                storeLocation = (string?)null,
+                storeName = (string?)null,
+                certificatePath = (string?)null,
+                privateKeyPath = (string?)null,
+                certificatePem = (string?)null,
+                publicKeyPem = (string?)null,
+                publicKeyFingerprint = (string?)null,
+                keyId = (string?)null,
+                keyVersion = (string?)null,
+                reason = "Issue package via binding id"
+            },
+            token);
+
+        issuePackageResponse.EnsureSuccessStatusCode();
+        Assert.Equal("ServiceValidation", issuePackageResponse.Headers.GetValues("X-Package-Type").Single());
+        var packageBytes = await issuePackageResponse.Content.ReadAsByteArrayAsync();
+        using var packageDocument = JsonDocument.Parse(packageBytes);
+        Assert.Equal(bindingId, packageDocument.RootElement.GetProperty("protectionBinding").GetProperty("bindingId").GetGuid());
     }
 
     [Fact]

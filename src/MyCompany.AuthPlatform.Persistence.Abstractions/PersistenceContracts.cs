@@ -45,6 +45,15 @@ public sealed class ListAdminUsersRequest
     public int Take { get; init; } = 50;
 }
 
+public sealed class ListRecipientProtectionBindingsRequest
+{
+    public Guid? ClientId { get; init; }
+    public RecipientProtectionBindingStatus? Status { get; init; }
+    public string? BindingType { get; init; }
+    public int Skip { get; init; }
+    public int Take { get; init; } = 50;
+}
+
 public interface IServiceClientRepository
 {
     Task<ServiceClient?> GetByIdAsync(Guid clientId, CancellationToken cancellationToken = default);
@@ -92,6 +101,20 @@ public interface IHmacCredentialDetailRepository
     Task UpdateAsync(HmacCredentialDetail detail, CancellationToken cancellationToken = default);
 }
 
+public interface IRecipientProtectionBindingRepository
+{
+    Task<RecipientProtectionBinding?> GetByIdAsync(Guid bindingId, CancellationToken cancellationToken = default);
+    Task<RecipientProtectionBinding?> GetByNameAsync(
+        Guid clientId,
+        string bindingName,
+        CancellationToken cancellationToken = default);
+    Task<PagedResult<RecipientProtectionBinding>> ListAsync(
+        ListRecipientProtectionBindingsRequest request,
+        CancellationToken cancellationToken = default);
+    Task AddAsync(RecipientProtectionBinding binding, CancellationToken cancellationToken = default);
+    Task UpdateAsync(RecipientProtectionBinding binding, CancellationToken cancellationToken = default);
+}
+
 public interface IAuditLogRepository
 {
     Task AddAsync(AuditLogEntry entry, CancellationToken cancellationToken = default);
@@ -128,6 +151,7 @@ public interface IAuthPlatformUnitOfWork
     ICredentialRepository Credentials { get; }
     ICredentialScopeRepository CredentialScopes { get; }
     IHmacCredentialDetailRepository HmacCredentialDetails { get; }
+    IRecipientProtectionBindingRepository RecipientProtectionBindings { get; }
     IAuditLogRepository AuditLogs { get; }
     IAdminUserRepository AdminUsers { get; }
     IAdminUserRoleRepository AdminUserRoles { get; }

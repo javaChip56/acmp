@@ -216,9 +216,15 @@ public sealed class X509HmacCredentialPackageReader : IHmacCredentialPackageRead
     private X509Certificate2 ResolveCertificate(ProtectionBinding binding)
     {
         var bindingType = RequireText(binding.BindingType, "protectionBinding.bindingType");
+        if (string.Equals(bindingType, MyCompany.AuthPlatform.Application.RecipientProtectionBindingTypes.ExternalRsaPublicKey, StringComparison.Ordinal))
+        {
+            throw new HmacCredentialPackageException("ExternalRsaPublicKey package bindings require a private-key runtime configuration path that is not yet supported by this reader.");
+        }
+
         var normalizedThumbprint = NormalizeThumbprint(binding.CertificateThumbprint);
         var certificate = _certificateResolver.Resolve(new MyCompany.AuthPlatform.Application.HmacCredentialPackageProtectionBinding(
             bindingType,
+            BindingId: null,
             normalizedThumbprint,
             string.Equals(bindingType, MyCompany.AuthPlatform.Application.RecipientProtectionBindingTypes.X509StoreThumbprint, StringComparison.Ordinal)
                 ? RequireText(binding.StoreLocation, "protectionBinding.storeLocation")
@@ -232,7 +238,11 @@ public sealed class X509HmacCredentialPackageReader : IHmacCredentialPackageRead
             string.Equals(bindingType, MyCompany.AuthPlatform.Application.RecipientProtectionBindingTypes.X509File, StringComparison.Ordinal)
                 ? NormalizeOptionalText(binding.PrivateKeyPath)
                 : null,
-            CertificatePem: null));
+            CertificatePem: null,
+            PublicKeyPem: null,
+            PublicKeyFingerprint: null,
+            KeyId: null,
+            KeyVersion: null));
 
         if (!string.Equals(NormalizeThumbprint(certificate.Thumbprint), normalizedThumbprint, StringComparison.Ordinal))
         {

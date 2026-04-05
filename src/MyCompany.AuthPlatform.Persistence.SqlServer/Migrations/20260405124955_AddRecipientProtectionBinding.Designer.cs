@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using MyCompany.AuthPlatform.Persistence.SqlServer;
 
@@ -11,9 +12,11 @@ using MyCompany.AuthPlatform.Persistence.SqlServer;
 namespace MyCompany.AuthPlatform.Persistence.SqlServer.Migrations
 {
     [DbContext(typeof(AuthPlatformSqlServerDbContext))]
-    partial class AuthPlatformSqlServerDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260405124955_AddRecipientProtectionBinding")]
+    partial class AddRecipientProtectionBinding
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

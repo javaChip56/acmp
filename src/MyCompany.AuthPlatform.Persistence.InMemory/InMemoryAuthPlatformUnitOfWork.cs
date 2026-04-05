@@ -24,6 +24,7 @@ public sealed class InMemoryAuthPlatformUnitOfWork : IAuthPlatformUnitOfWork
         Credentials = new InMemoryCredentialRepository(_state);
         CredentialScopes = new InMemoryCredentialScopeRepository(_state);
         HmacCredentialDetails = new InMemoryHmacCredentialDetailRepository(_state);
+        RecipientProtectionBindings = new InMemoryRecipientProtectionBindingRepository(_state);
         AuditLogs = new InMemoryAuditLogRepository(_state);
         AdminUsers = new InMemoryAdminUserRepository(_state);
         AdminUserRoles = new InMemoryAdminUserRoleRepository(_state);
@@ -36,6 +37,8 @@ public sealed class InMemoryAuthPlatformUnitOfWork : IAuthPlatformUnitOfWork
     public ICredentialScopeRepository CredentialScopes { get; }
 
     public IHmacCredentialDetailRepository HmacCredentialDetails { get; }
+
+    public IRecipientProtectionBindingRepository RecipientProtectionBindings { get; }
 
     public IAuditLogRepository AuditLogs { get; }
 
@@ -54,6 +57,8 @@ public sealed class InMemoryPersistenceState
     internal Dictionary<(Guid CredentialId, string ScopeName), CredentialScope> CredentialScopes { get; } = new();
     internal Dictionary<Guid, HmacCredentialDetail> HmacCredentialDetails { get; } = new();
     internal Dictionary<string, Guid> KeyIds { get; } = new(StringComparer.Ordinal);
+    internal Dictionary<Guid, RecipientProtectionBinding> RecipientProtectionBindings { get; } = new();
+    internal Dictionary<(Guid ClientId, string BindingName), Guid> RecipientProtectionBindingNames { get; } = new();
     internal Dictionary<Guid, AuditLogEntry> AuditLogs { get; } = new();
     internal Dictionary<Guid, AdminUser> AdminUsers { get; } = new();
     internal Dictionary<string, Guid> AdminUsernames { get; } = new(StringComparer.OrdinalIgnoreCase);
@@ -545,6 +550,155 @@ internal sealed class InMemoryAuditLogRepository : IAuditLogRepository
             Outcome = entry.Outcome,
             CorrelationId = entry.CorrelationId,
             MetadataJson = entry.MetadataJson,
+        };
+}
+
+internal sealed class InMemoryRecipientProtectionBindingRepository : IRecipientProtectionBindingRepository
+{
+    private readonly InMemoryPersistenceState _state;
+
+    public InMemoryRecipientProtectionBindingRepository(InMemoryPersistenceState state) => _state = state;
+
+    public Task<RecipientProtectionBinding?> GetByIdAsync(Guid bindingId, CancellationToken cancellationToken = default)
+    {
+        lock (_state.SyncRoot)
+        {
+            return Task.FromResult(
+                _state.RecipientProtectionBindings.TryGetValue(bindingId, out var binding) ? Clone(binding) : null);
+        }
+    }
+
+    public Task<RecipientProtectionBinding?> GetByNameAsync(
+        Guid clientId,
+        string bindingName,
+        CancellationToken cancellationToken = default)
+    {
+        lock (_state.SyncRoot)
+        {
+            var normalizedName = bindingName.Trim();
+            if (!_state.RecipientProtectionBindingNames.TryGetValue((clientId, normalizedName), out var bindingId))
+            {
+                return Task.FromResult<RecipientProtectionBinding?>(null);
+            }
+
+            return Task.FromResult(
+                _state.RecipientProtectionBindings.TryGetValue(bindingId, out var binding) ? Clone(binding) : null);
+        }
+    }
+
+    public Task<PagedResult<RecipientProtectionBinding>> ListAsync(
+        ListRecipientProtectionBindingsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        lock (_state.SyncRoot)
+        {
+            var query = _state.RecipientProtectionBindings.Values.AsEnumerable();
+
+            if (request.ClientId.HasValue)
+            {
+                query = query.Where(item => item.ClientId == request.ClientId.Value);
+            }
+
+            if (request.Status.HasValue)
+            {
+                query = query.Where(item => item.Status == request.Status.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.BindingType))
+            {
+                query = query.Where(item => string.Equals(item.BindingType, request.BindingType, StringComparison.Ordinal));
+            }
+
+            var ordered = query
+                .OrderBy(item => item.ClientId)
+                .ThenBy(item => item.BindingName, StringComparer.Ordinal)
+                .Select(Clone)
+                .ToList();
+
+            return Task.FromResult(Pagination.Paginate(ordered, request.Skip, request.Take));
+        }
+    }
+
+    public Task AddAsync(RecipientProtectionBinding binding, CancellationToken cancellationToken = default)
+    {
+        lock (_state.SyncRoot)
+        {
+            if (_state.RecipientProtectionBindings.ContainsKey(binding.BindingId))
+            {
+                throw new InvalidOperationException($"Recipient protection binding '{binding.BindingId}' already exists.");
+            }
+
+            if (!_state.ServiceClients.ContainsKey(binding.ClientId))
+            {
+                throw new InvalidOperationException(
+                    $"Recipient protection binding '{binding.BindingId}' references unknown client '{binding.ClientId}'.");
+            }
+
+            var key = (binding.ClientId, binding.BindingName);
+            if (_state.RecipientProtectionBindingNames.ContainsKey(key))
+            {
+                throw new InvalidOperationException(
+                    $"Recipient protection binding name '{binding.BindingName}' already exists for client '{binding.ClientId}'.");
+            }
+
+            _state.RecipientProtectionBindings[binding.BindingId] = Clone(binding);
+            _state.RecipientProtectionBindingNames[key] = binding.BindingId;
+            return Task.CompletedTask;
+        }
+    }
+
+    public Task UpdateAsync(RecipientProtectionBinding binding, CancellationToken cancellationToken = default)
+    {
+        lock (_state.SyncRoot)
+        {
+            if (!_state.RecipientProtectionBindings.TryGetValue(binding.BindingId, out var existing))
+            {
+                throw new KeyNotFoundException($"Recipient protection binding '{binding.BindingId}' was not found.");
+            }
+
+            var existingKey = (existing.ClientId, existing.BindingName);
+            var updatedKey = (binding.ClientId, binding.BindingName);
+
+            if (!Equals(existingKey, updatedKey) &&
+                _state.RecipientProtectionBindingNames.ContainsKey(updatedKey))
+            {
+                throw new InvalidOperationException(
+                    $"Recipient protection binding name '{binding.BindingName}' already exists for client '{binding.ClientId}'.");
+            }
+
+            _state.RecipientProtectionBindingNames.Remove(existingKey);
+            _state.RecipientProtectionBindings[binding.BindingId] = Clone(binding);
+            _state.RecipientProtectionBindingNames[updatedKey] = binding.BindingId;
+            return Task.CompletedTask;
+        }
+    }
+
+    private static RecipientProtectionBinding Clone(RecipientProtectionBinding binding) =>
+        new()
+        {
+            BindingId = binding.BindingId,
+            ClientId = binding.ClientId,
+            BindingName = binding.BindingName,
+            BindingType = binding.BindingType,
+            Status = binding.Status,
+            Algorithm = binding.Algorithm,
+            PublicKeyPem = binding.PublicKeyPem,
+            PublicKeyFingerprint = binding.PublicKeyFingerprint,
+            CertificateThumbprint = binding.CertificateThumbprint,
+            StoreLocation = binding.StoreLocation,
+            StoreName = binding.StoreName,
+            CertificatePath = binding.CertificatePath,
+            PrivateKeyPathHint = binding.PrivateKeyPathHint,
+            KeyId = binding.KeyId,
+            KeyVersion = binding.KeyVersion,
+            ActivatedAt = binding.ActivatedAt,
+            RetiredAt = binding.RetiredAt,
+            Notes = binding.Notes,
+            CreatedAt = binding.CreatedAt,
+            CreatedBy = binding.CreatedBy,
+            UpdatedAt = binding.UpdatedAt,
+            UpdatedBy = binding.UpdatedBy,
+            ConcurrencyToken = binding.ConcurrencyToken,
         };
 }
 

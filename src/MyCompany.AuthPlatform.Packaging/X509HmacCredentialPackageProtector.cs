@@ -32,9 +32,7 @@ public sealed class X509HmacCredentialPackageProtector : IHmacCredentialPackageP
             throw new ApplicationServiceException(500, "package_issuance_failed", "Credential secret material is not available for package issuance.");
         }
 
-        var certificate = _certificateResolver.Resolve(definition.ProtectionBinding);
-        using var rsa = certificate.GetRSAPublicKey()
-            ?? throw new ApplicationServiceException(400, "package_binding_invalid", "The requested X.509 certificate does not expose an RSA public key.");
+        using var wrappingKey = ResolveWrappingKey(definition.ProtectionBinding, out var certificate);
 
         var payload = CreatePayload(definition);
         var payloadBytes = JsonSerializer.SerializeToUtf8Bytes(payload);
@@ -48,7 +46,7 @@ public sealed class X509HmacCredentialPackageProtector : IHmacCredentialPackageP
             aesGcm.Encrypt(payloadNonce, payloadBytes, ciphertext, authTag);
         }
 
-        var encryptedDataKey = rsa.Encrypt(contentEncryptionKey, RSAEncryptionPadding.OaepSHA256);
+        var encryptedDataKey = wrappingKey.Encrypt(contentEncryptionKey, RSAEncryptionPadding.OaepSHA256);
         CryptographicOperations.ZeroMemory(contentEncryptionKey);
 
         var envelope = new PackageEnvelope(
@@ -91,6 +89,36 @@ public sealed class X509HmacCredentialPackageProtector : IHmacCredentialPackageP
             packageBytes));
     }
 
+    private RSA ResolveWrappingKey(
+        HmacCredentialPackageProtectionBinding binding,
+        out X509Certificate2? certificate)
+    {
+        if (string.Equals(binding.BindingType, RecipientProtectionBindingTypes.ExternalRsaPublicKey, StringComparison.Ordinal))
+        {
+            certificate = null;
+            var publicKeyPem = binding.PublicKeyPem?.Trim();
+            if (string.IsNullOrWhiteSpace(publicKeyPem))
+            {
+                throw new ApplicationServiceException(400, "package_binding_invalid", "The requested external RSA public-key binding does not include public key material.");
+            }
+
+            try
+            {
+                var rsa = RSA.Create();
+                rsa.ImportFromPem(publicKeyPem);
+                return rsa;
+            }
+            catch (Exception exception) when (exception is ArgumentException or CryptographicException)
+            {
+                throw new ApplicationServiceException(400, "package_binding_invalid", "The requested external RSA public-key binding could not be parsed.");
+            }
+        }
+
+        certificate = _certificateResolver.Resolve(binding);
+        return certificate.GetRSAPublicKey()
+            ?? throw new ApplicationServiceException(400, "package_binding_invalid", "The requested X.509 certificate does not expose an RSA public key.");
+    }
+
     private static object CreatePayload(HmacCredentialPackageDefinition definition)
     {
         var secretBase64 = Convert.ToBase64String(definition.Secret);
@@ -116,7 +144,7 @@ public sealed class X509HmacCredentialPackageProtector : IHmacCredentialPackageP
 
     private static ProtectionBindingEnvelope CreateProtectionBindingEnvelope(
         HmacCredentialPackageProtectionBinding binding,
-        X509Certificate2 certificate)
+        X509Certificate2? certificate)
     {
         var bindingType = binding.BindingType?.Trim();
 
@@ -124,22 +152,48 @@ public sealed class X509HmacCredentialPackageProtector : IHmacCredentialPackageP
         {
             return new ProtectionBindingEnvelope(
                 RecipientProtectionBindingTypes.X509StoreThumbprint,
+                binding.BindingId,
                 NormalizeThumbprint(binding.CertificateThumbprint),
                 binding.StoreLocation,
                 binding.StoreName,
                 null,
-                null);
+                null,
+                null,
+                null,
+                null,
+                KeyEncryptionAlgorithm);
         }
 
         if (string.Equals(bindingType, RecipientProtectionBindingTypes.X509File, StringComparison.Ordinal))
         {
             return new ProtectionBindingEnvelope(
                 RecipientProtectionBindingTypes.X509File,
-                NormalizeThumbprint(certificate.Thumbprint),
+                binding.BindingId,
+                NormalizeThumbprint(certificate?.Thumbprint),
                 null,
                 null,
                 binding.CertificatePath,
-                binding.PrivateKeyPath);
+                binding.PrivateKeyPath,
+                null,
+                null,
+                null,
+                KeyEncryptionAlgorithm);
+        }
+
+        if (string.Equals(bindingType, RecipientProtectionBindingTypes.ExternalRsaPublicKey, StringComparison.Ordinal))
+        {
+            return new ProtectionBindingEnvelope(
+                RecipientProtectionBindingTypes.ExternalRsaPublicKey,
+                binding.BindingId,
+                null,
+                null,
+                null,
+                null,
+                null,
+                binding.PublicKeyFingerprint,
+                binding.KeyId,
+                binding.KeyVersion,
+                KeyEncryptionAlgorithm);
         }
 
         throw new ApplicationServiceException(400, "package_binding_invalid", "The requested protection binding type is not supported.");
@@ -172,11 +226,16 @@ public sealed class X509HmacCredentialPackageProtector : IHmacCredentialPackageP
 
     private sealed record ProtectionBindingEnvelope(
         string BindingType,
-        string CertificateThumbprint,
+        Guid? BindingId,
+        string? CertificateThumbprint,
         string? StoreLocation,
         string? StoreName,
         string? CertificatePath,
-        string? PrivateKeyPath);
+        string? PrivateKeyPath,
+        string? PublicKeyFingerprint,
+        string? KeyId,
+        string? KeyVersion,
+        string KeyEncryptionAlgorithm);
 
     private sealed record CryptoMetadataEnvelope(
         string ContentEncryptionAlgorithm,

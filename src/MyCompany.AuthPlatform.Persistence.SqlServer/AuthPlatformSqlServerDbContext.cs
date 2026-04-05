@@ -18,6 +18,8 @@ public sealed class AuthPlatformSqlServerDbContext : DbContext
 
     public DbSet<HmacCredentialDetail> HmacCredentialDetails => Set<HmacCredentialDetail>();
 
+    public DbSet<RecipientProtectionBinding> RecipientProtectionBindings => Set<RecipientProtectionBinding>();
+
     public DbSet<AuditLogEntry> AuditLogs => Set<AuditLogEntry>();
 
     public DbSet<AdminUser> AdminUsers => Set<AdminUser>();
@@ -95,6 +97,36 @@ public sealed class AuthPlatformSqlServerDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
             entity.HasIndex(item => item.KeyId).IsUnique();
             entity.HasIndex(item => item.KeyVersion);
+        });
+
+        modelBuilder.Entity<RecipientProtectionBinding>(entity =>
+        {
+            entity.ToTable("RecipientProtectionBinding");
+            entity.HasKey(item => item.BindingId);
+            entity.Property(item => item.BindingName).HasMaxLength(200).IsRequired();
+            entity.Property(item => item.BindingType).HasMaxLength(64).IsRequired();
+            entity.Property(item => item.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+            entity.Property(item => item.Algorithm).HasMaxLength(64).IsRequired();
+            entity.Property(item => item.PublicKeyPem).HasColumnType("nvarchar(max)");
+            entity.Property(item => item.PublicKeyFingerprint).HasMaxLength(256);
+            entity.Property(item => item.CertificateThumbprint).HasMaxLength(256);
+            entity.Property(item => item.StoreLocation).HasMaxLength(64);
+            entity.Property(item => item.StoreName).HasMaxLength(64);
+            entity.Property(item => item.CertificatePath).HasMaxLength(1024);
+            entity.Property(item => item.PrivateKeyPathHint).HasMaxLength(1024);
+            entity.Property(item => item.KeyId).HasMaxLength(200);
+            entity.Property(item => item.KeyVersion).HasMaxLength(64);
+            entity.Property(item => item.Notes).HasMaxLength(2000);
+            entity.Property(item => item.CreatedBy).HasMaxLength(200).IsRequired();
+            entity.Property(item => item.UpdatedBy).HasMaxLength(200).IsRequired();
+            entity.Property(item => item.ConcurrencyToken).HasMaxLength(64);
+            entity.HasOne<ServiceClient>()
+                .WithMany()
+                .HasForeignKey(item => item.ClientId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(item => new { item.ClientId, item.BindingName }).IsUnique();
+            entity.HasIndex(item => new { item.ClientId, item.Status });
+            entity.HasIndex(item => new { item.BindingType, item.Status });
         });
 
         modelBuilder.Entity<AuditLogEntry>(entity =>

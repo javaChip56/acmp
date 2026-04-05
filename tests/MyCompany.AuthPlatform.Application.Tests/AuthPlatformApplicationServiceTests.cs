@@ -3,6 +3,7 @@ using MyCompany.AuthPlatform.Packaging;
 using MyCompany.AuthPlatform.Persistence.InMemory;
 using MyCompany.Shared.Contracts.Domain;
 using Xunit;
+using System.Security.Cryptography;
 
 namespace MyCompany.AuthPlatform.Application.Tests;
 
@@ -130,6 +131,7 @@ public sealed class AuthPlatformApplicationServiceTests
         var package = await service.IssueServiceValidationPackageAsync(
             credential.CredentialId,
             new IssueCredentialPackageRequest(
+                RecipientBindingId: null,
                 BindingType: RecipientProtectionBindingTypes.X509StoreThumbprint,
                 CertificateThumbprint: "ABCD1234EF567890ABCD1234EF567890ABCD1234",
                 StoreLocation: "CurrentUser",
@@ -137,6 +139,10 @@ public sealed class AuthPlatformApplicationServiceTests
                 CertificatePath: null,
                 PrivateKeyPath: null,
                 CertificatePem: null,
+                PublicKeyPem: null,
+                PublicKeyFingerprint: null,
+                KeyId: null,
+                KeyVersion: null,
                 Reason: "Issue package for service validation"),
             operatorAccess);
 
@@ -184,6 +190,7 @@ public sealed class AuthPlatformApplicationServiceTests
         await service.IssueServiceValidationPackageAsync(
             credential.CredentialId,
             new IssueCredentialPackageRequest(
+                RecipientBindingId: null,
                 BindingType: RecipientProtectionBindingTypes.X509StoreThumbprint,
                 CertificateThumbprint: "ABCD1234EF567890ABCD1234EF567890ABCD1234",
                 StoreLocation: "CurrentUser",
@@ -191,6 +198,10 @@ public sealed class AuthPlatformApplicationServiceTests
                 CertificatePath: null,
                 PrivateKeyPath: null,
                 CertificatePem: null,
+                PublicKeyPem: null,
+                PublicKeyFingerprint: null,
+                KeyId: null,
+                KeyVersion: null,
                 Reason: null),
             operatorAccess);
 
@@ -204,6 +215,78 @@ public sealed class AuthPlatformApplicationServiceTests
         Assert.NotEqual(
             Convert.ToBase64String(storedDetail!.EncryptedSecret),
             Convert.ToBase64String(protector.LastDefinition!.Secret));
+    }
+
+    [Fact]
+    public async Task CreateRecipientProtectionBindingAndIssuePackageAsync_UsesStoredBinding()
+    {
+        var protector = new FakePackageProtector();
+        var service = CreateService(out _, protector);
+        var operatorAccess = OperatorContext();
+        using var rsa = RSA.Create(3072);
+        var publicKeyPem = rsa.ExportSubjectPublicKeyInfoPem();
+
+        var client = await service.CreateServiceClientAsync(
+            new CreateServiceClientRequest(
+                ClientCode: "orders-api",
+                ClientName: "Orders API",
+                Owner: "Integration Team",
+                Environment: DeploymentEnvironment.Uat,
+                Description: null,
+                MetadataJson: null),
+            operatorAccess);
+
+        var binding = await service.CreateRecipientProtectionBindingAsync(
+            client.ClientId,
+            new CreateRecipientProtectionBindingRequest(
+                BindingName: "orders-api-prod-rsa-2026q2",
+                BindingType: RecipientProtectionBindingTypes.ExternalRsaPublicKey,
+                Algorithm: "RSA-3072",
+                PublicKeyPem: publicKeyPem,
+                CertificateThumbprint: null,
+                StoreLocation: null,
+                StoreName: null,
+                CertificatePath: null,
+                PrivateKeyPathHint: null,
+                KeyId: "orders-api-prod-rsa",
+                KeyVersion: "2026q2",
+                Notes: "Primary package decryption key"),
+            operatorAccess);
+
+        var credential = await service.IssueHmacCredentialAsync(
+            client.ClientId,
+            new IssueHmacCredentialRequest(
+                ExpiresAt: DateTimeOffset.UtcNow.AddDays(30),
+                Scopes: ["orders.read"],
+                Notes: "Initial credential",
+                KeyId: "orders-api-hmac-1",
+                KeyVersion: "kms-v1"),
+            operatorAccess);
+
+        await service.IssueServiceValidationPackageAsync(
+            credential.CredentialId,
+            new IssueCredentialPackageRequest(
+                RecipientBindingId: binding.BindingId,
+                BindingType: RecipientProtectionBindingTypes.ExternalRsaPublicKey,
+                CertificateThumbprint: null,
+                StoreLocation: null,
+                StoreName: null,
+                CertificatePath: null,
+                PrivateKeyPath: null,
+                CertificatePem: null,
+                PublicKeyPem: null,
+                PublicKeyFingerprint: null,
+                KeyId: null,
+                KeyVersion: null,
+                Reason: "Issue package via stored binding"),
+            operatorAccess);
+
+        Assert.NotNull(protector.LastDefinition);
+        Assert.Equal(binding.BindingId, protector.LastDefinition!.ProtectionBinding.BindingId);
+        Assert.Equal(RecipientProtectionBindingTypes.ExternalRsaPublicKey, protector.LastDefinition.ProtectionBinding.BindingType);
+        Assert.Equal("orders-api-prod-rsa", protector.LastDefinition.ProtectionBinding.KeyId);
+        Assert.Equal("2026q2", protector.LastDefinition.ProtectionBinding.KeyVersion);
+        Assert.NotNull(protector.LastDefinition.ProtectionBinding.PublicKeyFingerprint);
     }
 
     [Fact]

@@ -209,6 +209,191 @@ public sealed class AuthPlatformApplicationService
         return MapServiceClient(client);
     }
 
+    public async Task<IReadOnlyList<RecipientProtectionBindingSummary>> ListRecipientProtectionBindingsAsync(
+        Guid clientId,
+        AdminAccessContext accessContext,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureMinimumRole(accessContext, AdminAccessRole.AccessOperator);
+
+        var client = await _unitOfWork.ServiceClients.GetByIdAsync(clientId, cancellationToken)
+            ?? throw new ApplicationServiceException(404, "client_not_found", "The specified client could not be found.");
+
+        _ = client;
+
+        var bindings = await _unitOfWork.RecipientProtectionBindings.ListAsync(
+            new ListRecipientProtectionBindingsRequest
+            {
+                ClientId = clientId,
+                Take = DefaultPageSize,
+            },
+            cancellationToken);
+
+        return bindings.Items.Select(MapRecipientProtectionBinding).ToArray();
+    }
+
+    public async Task<RecipientProtectionBindingSummary> CreateRecipientProtectionBindingAsync(
+        Guid clientId,
+        CreateRecipientProtectionBindingRequest request,
+        AdminAccessContext accessContext,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureMinimumRole(accessContext, AdminAccessRole.AccessOperator);
+
+        var client = await _unitOfWork.ServiceClients.GetByIdAsync(clientId, cancellationToken)
+            ?? throw new ApplicationServiceException(404, "client_not_found", "The specified client could not be found.");
+
+        var bindingName = RequireText(request.BindingName, "bindingName");
+        var existing = await _unitOfWork.RecipientProtectionBindings.GetByNameAsync(clientId, bindingName, cancellationToken);
+        if (existing is not null)
+        {
+            throw new ApplicationServiceException(409, "recipient_binding_name_conflict", "A recipient protection binding with the same name already exists for the target client.");
+        }
+
+        var bindingType = RequireText(request.BindingType, "bindingType");
+        var algorithm = RequireText(request.Algorithm, "algorithm");
+        var now = DateTimeOffset.UtcNow;
+        var binding = BuildRecipientProtectionBinding(
+            clientId,
+            bindingName,
+            bindingType,
+            algorithm,
+            request,
+            accessContext,
+            now);
+
+        await _unitOfWork.RecipientProtectionBindings.AddAsync(binding, cancellationToken);
+        await AppendAuditLogAsync(
+            accessContext,
+            "RecipientProtectionBindingCreated",
+            "RecipientProtectionBinding",
+            binding.BindingId.ToString(),
+            client.Environment,
+            NormalizeOptionalText(request.Notes) ?? "Recipient protection binding created.",
+            AuditOutcome.Succeeded,
+            new
+            {
+                role = accessContext.Role.ToString(),
+                binding.BindingType,
+                binding.BindingName,
+                binding.Status,
+                binding.PublicKeyFingerprint,
+                binding.CertificateThumbprint,
+                clientId,
+            },
+            cancellationToken);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return MapRecipientProtectionBinding(binding);
+    }
+
+    public async Task<RecipientProtectionBindingSummary> ActivateRecipientProtectionBindingAsync(
+        Guid bindingId,
+        UpdateRecipientProtectionBindingStatusRequest request,
+        AdminAccessContext accessContext,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureMinimumRole(accessContext, AdminAccessRole.AccessOperator);
+
+        var binding = await _unitOfWork.RecipientProtectionBindings.GetByIdAsync(bindingId, cancellationToken)
+            ?? throw new ApplicationServiceException(404, "recipient_binding_not_found", "The specified recipient protection binding could not be found.");
+
+        if (binding.Status == RecipientProtectionBindingStatus.Revoked)
+        {
+            throw new ApplicationServiceException(409, "recipient_binding_revoked", "A revoked recipient protection binding cannot be reactivated.");
+        }
+
+        if (binding.Status == RecipientProtectionBindingStatus.Active)
+        {
+            throw new ApplicationServiceException(409, "recipient_binding_already_active", "The recipient protection binding is already active.");
+        }
+
+        var client = await _unitOfWork.ServiceClients.GetByIdAsync(binding.ClientId, cancellationToken)
+            ?? throw new ApplicationServiceException(409, "client_not_found", "The client associated with the recipient protection binding could not be found.");
+
+        var reason = NormalizeOptionalText(request.Reason) ?? "Recipient protection binding activated.";
+        var now = DateTimeOffset.UtcNow;
+        binding.Status = RecipientProtectionBindingStatus.Active;
+        binding.ActivatedAt = now;
+        binding.RetiredAt = null;
+        binding.UpdatedAt = now;
+        binding.UpdatedBy = accessContext.Actor;
+
+        await _unitOfWork.RecipientProtectionBindings.UpdateAsync(binding, cancellationToken);
+        await AppendAuditLogAsync(
+            accessContext,
+            "RecipientProtectionBindingActivated",
+            "RecipientProtectionBinding",
+            binding.BindingId.ToString(),
+            client.Environment,
+            reason,
+            AuditOutcome.Succeeded,
+            new
+            {
+                role = accessContext.Role.ToString(),
+                binding.BindingType,
+                binding.BindingName,
+                clientId = binding.ClientId,
+            },
+            cancellationToken);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return MapRecipientProtectionBinding(binding);
+    }
+
+    public async Task<RecipientProtectionBindingSummary> RetireRecipientProtectionBindingAsync(
+        Guid bindingId,
+        UpdateRecipientProtectionBindingStatusRequest request,
+        AdminAccessContext accessContext,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureMinimumRole(accessContext, AdminAccessRole.AccessOperator);
+
+        var binding = await _unitOfWork.RecipientProtectionBindings.GetByIdAsync(bindingId, cancellationToken)
+            ?? throw new ApplicationServiceException(404, "recipient_binding_not_found", "The specified recipient protection binding could not be found.");
+
+        if (binding.Status == RecipientProtectionBindingStatus.Revoked)
+        {
+            throw new ApplicationServiceException(409, "recipient_binding_revoked", "The recipient protection binding is revoked and cannot be retired.");
+        }
+
+        if (binding.Status == RecipientProtectionBindingStatus.Retired)
+        {
+            throw new ApplicationServiceException(409, "recipient_binding_already_retired", "The recipient protection binding is already retired.");
+        }
+
+        var client = await _unitOfWork.ServiceClients.GetByIdAsync(binding.ClientId, cancellationToken)
+            ?? throw new ApplicationServiceException(409, "client_not_found", "The client associated with the recipient protection binding could not be found.");
+
+        var reason = NormalizeOptionalText(request.Reason) ?? "Recipient protection binding retired.";
+        var now = DateTimeOffset.UtcNow;
+        binding.Status = RecipientProtectionBindingStatus.Retired;
+        binding.RetiredAt = now;
+        binding.UpdatedAt = now;
+        binding.UpdatedBy = accessContext.Actor;
+
+        await _unitOfWork.RecipientProtectionBindings.UpdateAsync(binding, cancellationToken);
+        await AppendAuditLogAsync(
+            accessContext,
+            "RecipientProtectionBindingRetired",
+            "RecipientProtectionBinding",
+            binding.BindingId.ToString(),
+            client.Environment,
+            reason,
+            AuditOutcome.Succeeded,
+            new
+            {
+                role = accessContext.Role.ToString(),
+                binding.BindingType,
+                binding.BindingName,
+                clientId = binding.ClientId,
+            },
+            cancellationToken);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return MapRecipientProtectionBinding(binding);
+    }
+
     public async Task<AdminUserSummary> CreateAdminUserAsync(
         CreateAdminUserRequest request,
         AdminAccessContext accessContext,
@@ -764,7 +949,7 @@ public sealed class AuthPlatformApplicationService
 
         var scopes = await _unitOfWork.CredentialScopes.ListByCredentialIdAsync(credential.CredentialId, cancellationToken);
         var now = DateTimeOffset.UtcNow;
-        var protectionBinding = BuildProtectionBinding(request);
+        var protectionBinding = await BuildProtectionBindingAsync(credential, request, cancellationToken);
         var packageScopes = scopes
             .Select(scope => scope.ScopeName)
             .OrderBy(scope => scope, StringComparer.Ordinal)
@@ -819,6 +1004,8 @@ public sealed class AuthPlatformApplicationService
                 role = accessContext.Role.ToString(),
                 packageType = package.PackageType,
                 packageId = package.PackageId,
+                bindingId = protectionBinding.BindingId,
+                bindingType = protectionBinding.BindingType,
                 keyId = package.KeyId,
                 keyVersion = package.KeyVersion,
                 fileName = package.FileName,
@@ -845,19 +1032,57 @@ public sealed class AuthPlatformApplicationService
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
-    private static HmacCredentialPackageProtectionBinding BuildProtectionBinding(IssueCredentialPackageRequest request)
+    private async Task<HmacCredentialPackageProtectionBinding> BuildProtectionBindingAsync(
+        Credential credential,
+        IssueCredentialPackageRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.RecipientBindingId.HasValue)
+        {
+            var binding = await _unitOfWork.RecipientProtectionBindings.GetByIdAsync(request.RecipientBindingId.Value, cancellationToken)
+                ?? throw new ApplicationServiceException(404, "recipient_binding_not_found", "The specified recipient protection binding could not be found.");
+
+            if (binding.ClientId != credential.ClientId)
+            {
+                throw new ApplicationServiceException(409, "recipient_binding_client_mismatch", "The specified recipient protection binding does not belong to the credential's client.");
+            }
+
+            if (binding.Status != RecipientProtectionBindingStatus.Active)
+            {
+                throw new ApplicationServiceException(409, "recipient_binding_inactive", "Only active recipient protection bindings may be used for package issuance.");
+            }
+
+            var requestedBindingType = NormalizeOptionalText(request.BindingType);
+            if (requestedBindingType is not null &&
+                !string.Equals(requestedBindingType, binding.BindingType, StringComparison.Ordinal))
+            {
+                throw new ApplicationServiceException(400, "package_binding_invalid", "The supplied bindingType does not match the selected recipient binding.");
+            }
+
+            return CreatePackageProtectionBinding(binding);
+        }
+
+        return BuildInlineProtectionBinding(request);
+    }
+
+    private static HmacCredentialPackageProtectionBinding BuildInlineProtectionBinding(IssueCredentialPackageRequest request)
     {
         var bindingType = RequireText(request.BindingType, "bindingType");
         if (string.Equals(bindingType, RecipientProtectionBindingTypes.X509StoreThumbprint, StringComparison.Ordinal))
         {
             return new HmacCredentialPackageProtectionBinding(
                 BindingType: RecipientProtectionBindingTypes.X509StoreThumbprint,
+                BindingId: null,
                 CertificateThumbprint: RequireText(request.CertificateThumbprint, "certificateThumbprint"),
                 StoreLocation: RequireText(request.StoreLocation, "storeLocation"),
                 StoreName: RequireText(request.StoreName, "storeName"),
                 CertificatePath: null,
                 PrivateKeyPath: null,
-                CertificatePem: null);
+                CertificatePem: null,
+                PublicKeyPem: null,
+                PublicKeyFingerprint: null,
+                KeyId: null,
+                KeyVersion: null);
         }
 
         if (string.Equals(bindingType, RecipientProtectionBindingTypes.X509File, StringComparison.Ordinal))
@@ -875,18 +1100,141 @@ public sealed class AuthPlatformApplicationService
 
             return new HmacCredentialPackageProtectionBinding(
                 BindingType: RecipientProtectionBindingTypes.X509File,
+                BindingId: null,
                 CertificateThumbprint: NormalizeOptionalText(request.CertificateThumbprint),
                 StoreLocation: null,
                 StoreName: null,
                 CertificatePath: certificatePath,
                 PrivateKeyPath: NormalizeOptionalText(request.PrivateKeyPath),
-                CertificatePem: certificatePem);
+                CertificatePem: certificatePem,
+                PublicKeyPem: null,
+                PublicKeyFingerprint: null,
+                KeyId: null,
+                KeyVersion: null);
+        }
+
+        if (string.Equals(bindingType, RecipientProtectionBindingTypes.ExternalRsaPublicKey, StringComparison.Ordinal))
+        {
+            var publicKeyPem = RequireText(request.PublicKeyPem, "publicKeyPem");
+            var keyId = RequireText(request.KeyId, "keyId");
+            var keyVersion = RequireText(request.KeyVersion, "keyVersion");
+
+            return new HmacCredentialPackageProtectionBinding(
+                BindingType: RecipientProtectionBindingTypes.ExternalRsaPublicKey,
+                BindingId: null,
+                CertificateThumbprint: null,
+                StoreLocation: null,
+                StoreName: null,
+                CertificatePath: null,
+                PrivateKeyPath: null,
+                CertificatePem: null,
+                PublicKeyPem: publicKeyPem,
+                PublicKeyFingerprint: NormalizeOptionalText(request.PublicKeyFingerprint) ?? ComputePublicKeyFingerprint(publicKeyPem),
+                KeyId: keyId,
+                KeyVersion: keyVersion);
         }
 
         throw new ApplicationServiceException(
             400,
             "package_binding_invalid",
             $"The protection binding type '{bindingType}' is not supported.");
+    }
+
+    private static HmacCredentialPackageProtectionBinding CreatePackageProtectionBinding(RecipientProtectionBinding binding) =>
+        new(
+            BindingType: binding.BindingType,
+            BindingId: binding.BindingId,
+            CertificateThumbprint: binding.CertificateThumbprint,
+            StoreLocation: binding.StoreLocation,
+            StoreName: binding.StoreName,
+            CertificatePath: binding.CertificatePath,
+            PrivateKeyPath: binding.PrivateKeyPathHint,
+            CertificatePem: null,
+            PublicKeyPem: binding.PublicKeyPem,
+            PublicKeyFingerprint: binding.PublicKeyFingerprint,
+            KeyId: binding.KeyId,
+            KeyVersion: binding.KeyVersion);
+
+    private static RecipientProtectionBinding BuildRecipientProtectionBinding(
+        Guid clientId,
+        string bindingName,
+        string bindingType,
+        string algorithm,
+        CreateRecipientProtectionBindingRequest request,
+        AdminAccessContext accessContext,
+        DateTimeOffset now)
+    {
+        if (string.Equals(bindingType, RecipientProtectionBindingTypes.X509StoreThumbprint, StringComparison.Ordinal))
+        {
+            return new RecipientProtectionBinding
+            {
+                BindingId = Guid.NewGuid(),
+                ClientId = clientId,
+                BindingName = bindingName,
+                BindingType = RecipientProtectionBindingTypes.X509StoreThumbprint,
+                Status = RecipientProtectionBindingStatus.Active,
+                Algorithm = algorithm,
+                CertificateThumbprint = NormalizeThumbprint(RequireText(request.CertificateThumbprint, "certificateThumbprint")),
+                StoreLocation = RequireText(request.StoreLocation, "storeLocation"),
+                StoreName = RequireText(request.StoreName, "storeName"),
+                ActivatedAt = now,
+                Notes = NormalizeOptionalText(request.Notes),
+                CreatedAt = now,
+                CreatedBy = accessContext.Actor,
+                UpdatedAt = now,
+                UpdatedBy = accessContext.Actor,
+                ConcurrencyToken = Guid.NewGuid().ToString("N"),
+            };
+        }
+
+        if (string.Equals(bindingType, RecipientProtectionBindingTypes.X509File, StringComparison.Ordinal))
+        {
+            return new RecipientProtectionBinding
+            {
+                BindingId = Guid.NewGuid(),
+                ClientId = clientId,
+                BindingName = bindingName,
+                BindingType = RecipientProtectionBindingTypes.X509File,
+                Status = RecipientProtectionBindingStatus.Active,
+                Algorithm = algorithm,
+                CertificatePath = RequireText(request.CertificatePath, "certificatePath"),
+                PrivateKeyPathHint = NormalizeOptionalText(request.PrivateKeyPathHint),
+                ActivatedAt = now,
+                Notes = NormalizeOptionalText(request.Notes),
+                CreatedAt = now,
+                CreatedBy = accessContext.Actor,
+                UpdatedAt = now,
+                UpdatedBy = accessContext.Actor,
+                ConcurrencyToken = Guid.NewGuid().ToString("N"),
+            };
+        }
+
+        if (string.Equals(bindingType, RecipientProtectionBindingTypes.ExternalRsaPublicKey, StringComparison.Ordinal))
+        {
+            var publicKeyPem = RequireText(request.PublicKeyPem, "publicKeyPem");
+            return new RecipientProtectionBinding
+            {
+                BindingId = Guid.NewGuid(),
+                ClientId = clientId,
+                BindingName = bindingName,
+                BindingType = RecipientProtectionBindingTypes.ExternalRsaPublicKey,
+                Status = RecipientProtectionBindingStatus.Active,
+                Algorithm = algorithm,
+                PublicKeyPem = publicKeyPem,
+                PublicKeyFingerprint = ComputePublicKeyFingerprint(publicKeyPem),
+                KeyId = RequireText(request.KeyId, "keyId"),
+                KeyVersion = RequireText(request.KeyVersion, "keyVersion"),
+                ActivatedAt = now,
+                Notes = NormalizeOptionalText(request.Notes),
+                CreatedAt = now,
+                CreatedBy = accessContext.Actor,
+                UpdatedAt = now,
+                UpdatedBy = accessContext.Actor,
+                ConcurrencyToken = Guid.NewGuid().ToString("N"),
+            };
+        }
+
+        throw new ApplicationServiceException(400, "recipient_binding_invalid", $"The recipient binding type '{bindingType}' is not supported.");
     }
 
     private static IReadOnlyList<string> NormalizeScopes(IEnumerable<string>? scopes, bool required)
@@ -958,6 +1306,27 @@ public sealed class AuthPlatformApplicationService
             credential.CreatedAt,
             credential.UpdatedAt);
     }
+
+    private static RecipientProtectionBindingSummary MapRecipientProtectionBinding(RecipientProtectionBinding binding) =>
+        new(
+            binding.BindingId,
+            binding.ClientId,
+            binding.BindingName,
+            binding.BindingType,
+            binding.Status,
+            binding.Algorithm,
+            binding.PublicKeyFingerprint,
+            binding.CertificateThumbprint,
+            binding.StoreLocation,
+            binding.StoreName,
+            binding.CertificatePath,
+            binding.KeyId,
+            binding.KeyVersion,
+            binding.ActivatedAt,
+            binding.RetiredAt,
+            binding.Notes,
+            binding.CreatedAt,
+            binding.UpdatedAt);
 
     private async Task<AdminUserSummary> BuildAdminUserSummaryAsync(
         AdminUser user,
@@ -1044,6 +1413,25 @@ public sealed class AuthPlatformApplicationService
         var code = client.ClientCode.ToLowerInvariant();
         var suffix = Guid.NewGuid().ToString("N")[..12];
         return $"key-{environment}-{code}-{suffix}";
+    }
+
+    private static string NormalizeThumbprint(string? thumbprint) =>
+        string.Concat((thumbprint ?? string.Empty).Where(ch => !char.IsWhiteSpace(ch))).ToUpperInvariant();
+
+    private static string ComputePublicKeyFingerprint(string publicKeyPem)
+    {
+        try
+        {
+            using var rsa = System.Security.Cryptography.RSA.Create();
+            rsa.ImportFromPem(publicKeyPem);
+            var subjectPublicKeyInfo = rsa.ExportSubjectPublicKeyInfo();
+            var hash = System.Security.Cryptography.SHA256.HashData(subjectPublicKeyInfo);
+            return $"SHA256:{Convert.ToBase64String(hash)}";
+        }
+        catch (Exception exception) when (exception is ArgumentException or System.Security.Cryptography.CryptographicException)
+        {
+            throw new ApplicationServiceException(400, "recipient_binding_invalid", "The supplied publicKeyPem is not a valid RSA public key.");
+        }
     }
 
     private static HmacCredentialDetail CreateHmacDetail(

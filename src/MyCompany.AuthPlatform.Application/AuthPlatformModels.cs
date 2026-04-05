@@ -31,6 +31,26 @@ public sealed record CredentialSummary(
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
+public sealed record RecipientProtectionBindingSummary(
+    Guid BindingId,
+    Guid ClientId,
+    string BindingName,
+    string BindingType,
+    RecipientProtectionBindingStatus Status,
+    string Algorithm,
+    string? PublicKeyFingerprint,
+    string? CertificateThumbprint,
+    string? StoreLocation,
+    string? StoreName,
+    string? CertificatePath,
+    string? KeyId,
+    string? KeyVersion,
+    DateTimeOffset? ActivatedAt,
+    DateTimeOffset? RetiredAt,
+    string? Notes,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);
+
 public sealed record ClientCredentialList(
     Guid ClientId,
     string ClientCode,
@@ -67,6 +87,23 @@ public sealed record CreateServiceClientRequest(
     DeploymentEnvironment Environment,
     string? Description,
     string? MetadataJson);
+
+public sealed record CreateRecipientProtectionBindingRequest(
+    string BindingName,
+    string BindingType,
+    string Algorithm,
+    string? PublicKeyPem,
+    string? CertificateThumbprint,
+    string? StoreLocation,
+    string? StoreName,
+    string? CertificatePath,
+    string? PrivateKeyPathHint,
+    string? KeyId,
+    string? KeyVersion,
+    string? Notes);
+
+public sealed record UpdateRecipientProtectionBindingStatusRequest(
+    string? Reason);
 
 public sealed record CreateAdminUserRequest(
     string Username,
@@ -114,26 +151,37 @@ public static class RecipientProtectionBindingTypes
 {
     public const string X509StoreThumbprint = "X509StoreThumbprint";
     public const string X509File = "X509File";
+    public const string ExternalRsaPublicKey = "ExternalRsaPublicKey";
 }
 
 public sealed record IssueCredentialPackageRequest(
-    string BindingType,
+    Guid? RecipientBindingId,
+    string? BindingType,
     string? CertificateThumbprint,
     string? StoreLocation,
     string? StoreName,
     string? CertificatePath,
     string? PrivateKeyPath,
     string? CertificatePem,
+    string? PublicKeyPem,
+    string? PublicKeyFingerprint,
+    string? KeyId,
+    string? KeyVersion,
     string? Reason);
 
 public sealed record HmacCredentialPackageProtectionBinding(
     string BindingType,
+    Guid? BindingId,
     string? CertificateThumbprint,
     string? StoreLocation,
     string? StoreName,
     string? CertificatePath,
     string? PrivateKeyPath,
-    string? CertificatePem);
+    string? CertificatePem,
+    string? PublicKeyPem,
+    string? PublicKeyFingerprint,
+    string? KeyId,
+    string? KeyVersion);
 
 public sealed record HmacCredentialPackageDefinition(
     CredentialPackageType PackageType,

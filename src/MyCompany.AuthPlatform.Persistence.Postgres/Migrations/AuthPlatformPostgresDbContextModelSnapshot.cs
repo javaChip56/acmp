@@ -322,6 +322,112 @@ namespace MyCompany.AuthPlatform.Persistence.Postgres.Migrations
                     b.ToTable("HmacCredentialDetail", (string)null);
                 });
 
+            modelBuilder.Entity("MyCompany.Shared.Contracts.Domain.RecipientProtectionBinding", b =>
+                {
+                    b.Property<Guid>("BindingId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ActivatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Algorithm")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("BindingName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("BindingType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("CertificatePath")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<string>("CertificateThumbprint")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ConcurrencyToken")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("KeyId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("KeyVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("PrivateKeyPathHint")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<string>("PublicKeyFingerprint")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("PublicKeyPem")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("RetiredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("StoreLocation")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("StoreName")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("BindingId");
+
+                    b.HasIndex("BindingType", "Status");
+
+                    b.HasIndex("ClientId", "BindingName")
+                        .IsUnique();
+
+                    b.HasIndex("ClientId", "Status");
+
+                    b.ToTable("RecipientProtectionBinding", (string)null);
+                });
+
             modelBuilder.Entity("MyCompany.Shared.Contracts.Domain.ServiceClient", b =>
                 {
                     b.Property<Guid>("ClientId")
@@ -425,6 +531,15 @@ namespace MyCompany.AuthPlatform.Persistence.Postgres.Migrations
                     b.HasOne("MyCompany.Shared.Contracts.Domain.Credential", null)
                         .WithOne()
                         .HasForeignKey("MyCompany.Shared.Contracts.Domain.HmacCredentialDetail", "CredentialId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("MyCompany.Shared.Contracts.Domain.RecipientProtectionBinding", b =>
+                {
+                    b.HasOne("MyCompany.Shared.Contracts.Domain.ServiceClient", null)
+                        .WithMany()
+                        .HasForeignKey("ClientId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

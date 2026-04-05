@@ -430,6 +430,56 @@ app.MapPost("/api/clients", (
 .RequireAuthorization(AdminAccessPolicies.Operator)
 .WithOpenApi();
 
+app.MapGet("/api/clients/{clientId:guid}/recipient-bindings", (
+    Guid clientId,
+    HttpContext httpContext,
+    AuthPlatformApplicationService service,
+    CancellationToken cancellationToken) =>
+    ApiExecution.ExecuteAsync(httpContext, async accessContext =>
+        Results.Ok(await service.ListRecipientProtectionBindingsAsync(clientId, accessContext, cancellationToken))))
+.WithName("ListRecipientProtectionBindings")
+.RequireAuthorization(AdminAccessPolicies.Operator)
+.WithOpenApi();
+
+app.MapPost("/api/clients/{clientId:guid}/recipient-bindings", (
+    Guid clientId,
+    CreateRecipientProtectionBindingRequest request,
+    HttpContext httpContext,
+    AuthPlatformApplicationService service,
+    CancellationToken cancellationToken) =>
+    ApiExecution.ExecuteAsync(httpContext, async accessContext =>
+    {
+        var binding = await service.CreateRecipientProtectionBindingAsync(clientId, request, accessContext, cancellationToken);
+        return Results.Created($"/api/recipient-bindings/{binding.BindingId}", binding);
+    }))
+.WithName("CreateRecipientProtectionBinding")
+.RequireAuthorization(AdminAccessPolicies.Operator)
+.WithOpenApi();
+
+app.MapPost("/api/recipient-bindings/{bindingId:guid}/activate", (
+    Guid bindingId,
+    UpdateRecipientProtectionBindingStatusRequest request,
+    HttpContext httpContext,
+    AuthPlatformApplicationService service,
+    CancellationToken cancellationToken) =>
+    ApiExecution.ExecuteAsync(httpContext, async accessContext =>
+        Results.Ok(await service.ActivateRecipientProtectionBindingAsync(bindingId, request, accessContext, cancellationToken))))
+.WithName("ActivateRecipientProtectionBinding")
+.RequireAuthorization(AdminAccessPolicies.Operator)
+.WithOpenApi();
+
+app.MapPost("/api/recipient-bindings/{bindingId:guid}/retire", (
+    Guid bindingId,
+    UpdateRecipientProtectionBindingStatusRequest request,
+    HttpContext httpContext,
+    AuthPlatformApplicationService service,
+    CancellationToken cancellationToken) =>
+    ApiExecution.ExecuteAsync(httpContext, async accessContext =>
+        Results.Ok(await service.RetireRecipientProtectionBindingAsync(bindingId, request, accessContext, cancellationToken))))
+.WithName("RetireRecipientProtectionBinding")
+.RequireAuthorization(AdminAccessPolicies.Operator)
+.WithOpenApi();
+
 app.MapGet("/api/clients/{clientId:guid}/credentials", (
     Guid clientId,
     HttpContext httpContext,

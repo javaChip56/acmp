@@ -15,6 +15,7 @@ public sealed class PostgresAuthPlatformUnitOfWork : IAuthPlatformUnitOfWork
         Credentials = new PostgresCredentialRepository(dbContext);
         CredentialScopes = new PostgresCredentialScopeRepository(dbContext);
         HmacCredentialDetails = new PostgresHmacCredentialDetailRepository(dbContext);
+        RecipientProtectionBindings = new PostgresRecipientProtectionBindingRepository(dbContext);
         AuditLogs = new PostgresAuditLogRepository(dbContext);
         AdminUsers = new PostgresAdminUserRepository(dbContext);
         AdminUserRoles = new PostgresAdminUserRoleRepository(dbContext);
@@ -24,6 +25,7 @@ public sealed class PostgresAuthPlatformUnitOfWork : IAuthPlatformUnitOfWork
     public ICredentialRepository Credentials { get; }
     public ICredentialScopeRepository CredentialScopes { get; }
     public IHmacCredentialDetailRepository HmacCredentialDetails { get; }
+    public IRecipientProtectionBindingRepository RecipientProtectionBindings { get; }
     public IAuditLogRepository AuditLogs { get; }
     public IAdminUserRepository AdminUsers { get; }
     public IAdminUserRoleRepository AdminUserRoles { get; }
@@ -234,6 +236,58 @@ internal sealed class PostgresAuditLogRepository : IAuditLogRepository
 
         query = query.OrderByDescending(item => item.Timestamp);
         return await PostgresPaginationQuery.ToPagedResultAsync(query, request.Skip, request.Take, cancellationToken);
+    }
+}
+
+internal sealed class PostgresRecipientProtectionBindingRepository : IRecipientProtectionBindingRepository
+{
+    private readonly AuthPlatformPostgresDbContext _dbContext;
+
+    public PostgresRecipientProtectionBindingRepository(AuthPlatformPostgresDbContext dbContext) => _dbContext = dbContext;
+
+    public Task<RecipientProtectionBinding?> GetByIdAsync(Guid bindingId, CancellationToken cancellationToken = default) =>
+        _dbContext.RecipientProtectionBindings.SingleOrDefaultAsync(item => item.BindingId == bindingId, cancellationToken);
+
+    public Task<RecipientProtectionBinding?> GetByNameAsync(
+        Guid clientId,
+        string bindingName,
+        CancellationToken cancellationToken = default) =>
+        _dbContext.RecipientProtectionBindings.SingleOrDefaultAsync(
+            item => item.ClientId == clientId && item.BindingName == bindingName,
+            cancellationToken);
+
+    public async Task<PagedResult<RecipientProtectionBinding>> ListAsync(
+        ListRecipientProtectionBindingsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _dbContext.RecipientProtectionBindings.AsQueryable();
+
+        if (request.ClientId.HasValue)
+        {
+            query = query.Where(item => item.ClientId == request.ClientId.Value);
+        }
+
+        if (request.Status.HasValue)
+        {
+            query = query.Where(item => item.Status == request.Status.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.BindingType))
+        {
+            query = query.Where(item => item.BindingType == request.BindingType);
+        }
+
+        query = query.OrderBy(item => item.ClientId).ThenBy(item => item.BindingName);
+        return await PostgresPaginationQuery.ToPagedResultAsync(query, request.Skip, request.Take, cancellationToken);
+    }
+
+    public Task AddAsync(RecipientProtectionBinding binding, CancellationToken cancellationToken = default) =>
+        _dbContext.RecipientProtectionBindings.AddAsync(binding, cancellationToken).AsTask();
+
+    public Task UpdateAsync(RecipientProtectionBinding binding, CancellationToken cancellationToken = default)
+    {
+        _dbContext.RecipientProtectionBindings.Update(binding);
+        return Task.CompletedTask;
     }
 }
 
