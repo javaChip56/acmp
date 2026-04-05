@@ -2,7 +2,9 @@ namespace MyCompany.AuthPlatform.Api;
 
 public sealed record HealthResponse(
     string Status,
-    string PersistenceProvider);
+    string PersistenceProvider,
+    string MiniKmsProvider,
+    string MiniKmsKeyVersion);
 
 public sealed record DemoSystemInfoResponse(
     string AppName,

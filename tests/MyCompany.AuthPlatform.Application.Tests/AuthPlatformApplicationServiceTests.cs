@@ -152,10 +152,7 @@ public sealed class AuthPlatformApplicationServiceTests
     public async Task IssueServiceValidationPackageAsync_UsesDecryptedSecretMaterial()
     {
         var protector = new FakePackageProtector();
-        var secretProtector = new AesGcmHmacSecretProtector(new Dictionary<string, byte[]>
-        {
-            ["kms-v1"] = Enumerable.Range(50, 32).Select(index => (byte)index).ToArray()
-        });
+        var secretProtector = CreateSecretProtector(Enumerable.Range(50, 32).Select(index => (byte)index).ToArray());
         var unitOfWork = new InMemoryAuthPlatformUnitOfWork();
         var service = new AuthPlatformApplicationService(unitOfWork, protector, secretProtector);
         var operatorAccess = OperatorContext();
@@ -201,6 +198,23 @@ public sealed class AuthPlatformApplicationServiceTests
             Convert.ToBase64String(protector.LastDefinition!.Secret));
     }
 
+    [Fact]
+    public void LocalMiniKms_EncryptsAndDecryptsSecretRoundTrip()
+    {
+        var masterKey = Enumerable.Range(100, 32).Select(index => (byte)index).ToArray();
+        var miniKms = new LocalMiniKms(new ConfiguredMasterKeyProvider(
+            new Dictionary<string, byte[]> { ["kms-v1"] = masterKey },
+            "kms-v1"));
+        var secret = miniKms.GenerateRandomSecret();
+
+        var encrypted = miniKms.Encrypt(secret);
+        var decrypted = miniKms.Decrypt(encrypted);
+
+        Assert.Equal("kms-v1", encrypted.KeyVersion);
+        Assert.Equal("MINIKMS-LOCAL-AES256GCM", encrypted.EncryptionAlgorithm);
+        Assert.Equal(Convert.ToBase64String(secret), Convert.ToBase64String(decrypted));
+    }
+
     private static AuthPlatformApplicationService CreateService(
         out InMemoryAuthPlatformUnitOfWork unitOfWork,
         IHmacCredentialPackageProtector? packageProtector = null)
@@ -209,11 +223,13 @@ public sealed class AuthPlatformApplicationServiceTests
         return new AuthPlatformApplicationService(
             unitOfWork,
             packageProtector,
-            new AesGcmHmacSecretProtector(new Dictionary<string, byte[]>
-            {
-                ["kms-v1"] = Enumerable.Range(1, 32).Select(index => (byte)index).ToArray()
-            }));
+            CreateSecretProtector(Enumerable.Range(1, 32).Select(index => (byte)index).ToArray()));
     }
+
+    private static IHmacSecretProtector CreateSecretProtector(byte[] masterKey) =>
+        new MiniKmsHmacSecretProtector(new LocalMiniKms(new ConfiguredMasterKeyProvider(
+            new Dictionary<string, byte[]> { ["kms-v1"] = masterKey },
+            "kms-v1")));
 
     private static AdminAccessContext AdministratorContext() =>
         new("administrator.demo", AdminAccessRole.AccessAdministrator, Guid.NewGuid().ToString("N"));

@@ -27,13 +27,23 @@ builder.Services.Configure<DemoModeOptions>(
     builder.Configuration.GetSection(DemoModeOptions.SectionName));
 builder.Services.Configure<AuthProviderOptions>(
     builder.Configuration.GetSection(AuthProviderOptions.SectionName));
-builder.Services.Configure<HmacSecretProtectionOptions>(
-    builder.Configuration.GetSection(HmacSecretProtectionOptions.SectionName));
+builder.Services.Configure<MiniKmsOptions>(
+    builder.Configuration.GetSection(MiniKmsOptions.SectionName));
 
 var authProviderOptions = builder.Configuration
     .GetSection(AuthProviderOptions.SectionName)
     .Get<AuthProviderOptions>()
     ?? new AuthProviderOptions();
+var miniKmsOptions = builder.Configuration
+    .GetSection(MiniKmsOptions.SectionName)
+    .Get<MiniKmsOptions>()
+    ?? new MiniKmsOptions();
+
+if (!string.Equals(miniKmsOptions.Provider, MiniKmsOptions.LocalProvider, StringComparison.OrdinalIgnoreCase))
+{
+    throw new InvalidOperationException(
+        $"MiniKms:Provider '{miniKmsOptions.Provider}' is not supported. Use '{MiniKmsOptions.LocalProvider}'.");
+}
 
 var authenticationBuilder = builder.Services.AddAuthentication(options =>
 {
@@ -117,15 +127,18 @@ builder.Services.AddAuthPlatformSqlServerPersistence(builder.Configuration);
 builder.Services.AddAuthPlatformPostgresPersistence(builder.Configuration);
 builder.Services.AddSingleton<IX509CertificateResolver, StoreX509CertificateResolver>();
 builder.Services.AddSingleton<IHmacCredentialPackageProtector, X509HmacCredentialPackageProtector>();
-builder.Services.AddSingleton<IHmacSecretProtector>(serviceProvider =>
+builder.Services.AddSingleton<IMasterKeyProvider>(serviceProvider =>
 {
-    var options = serviceProvider.GetRequiredService<IOptions<HmacSecretProtectionOptions>>().Value;
+    var options = serviceProvider.GetRequiredService<IOptions<MiniKmsOptions>>().Value;
     var keys = options.MasterKeys.ToDictionary(
         pair => pair.Key,
         pair => Convert.FromBase64String(pair.Value),
         StringComparer.Ordinal);
-    return new AesGcmHmacSecretProtector(keys);
+    return new ConfiguredMasterKeyProvider(keys, options.ActiveKeyVersion);
 });
+builder.Services.AddSingleton<IMiniKms, LocalMiniKms>();
+builder.Services.AddSingleton<IHmacSecretProtector>(serviceProvider =>
+    new MiniKmsHmacSecretProtector(serviceProvider.GetRequiredService<IMiniKms>()));
 builder.Services.AddScoped<IAuthPlatformUnitOfWork>(serviceProvider =>
 {
     var persistenceOptions = serviceProvider.GetRequiredService<IOptions<PersistenceOptions>>().Value;
@@ -170,6 +183,8 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 var persistence = app.Services.GetRequiredService<IOptions<PersistenceOptions>>().Value;
+var miniKms = app.Services.GetRequiredService<IMiniKms>();
+var masterKeyProvider = app.Services.GetRequiredService<IMasterKeyProvider>();
 if (!string.Equals(persistence.Provider, PersistenceOptions.InMemoryDemoProvider, StringComparison.OrdinalIgnoreCase) &&
     !string.Equals(persistence.Provider, PersistenceOptions.SqlServerProvider, StringComparison.OrdinalIgnoreCase) &&
     !string.Equals(persistence.Provider, PersistenceOptions.PostgresProvider, StringComparison.OrdinalIgnoreCase))
@@ -197,7 +212,11 @@ app.MapGet("/", () => Results.Redirect("/swagger"))
 
 app.MapGet("/health", (IOptions<PersistenceOptions> persistenceOptions) =>
 {
-    return TypedResults.Ok(new HealthResponse("Healthy", persistenceOptions.Value.Provider));
+    return TypedResults.Ok(new HealthResponse(
+        "Healthy",
+        persistenceOptions.Value.Provider,
+        miniKms.ProviderName,
+        masterKeyProvider.GetActiveKeyVersion()));
 })
 .WithName("GetHealth")
 .WithOpenApi();

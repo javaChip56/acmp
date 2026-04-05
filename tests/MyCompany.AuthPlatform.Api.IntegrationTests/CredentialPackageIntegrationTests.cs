@@ -101,6 +101,19 @@ public sealed class CredentialPackageIntegrationTests
         Assert.NotNull(packageAuditEntry);
     }
 
+    [Fact]
+    public async Task HealthEndpoint_ExposesMiniKmsProviderAndKeyVersion()
+    {
+        using var certificate = CreateCertificate();
+        using var factory = new PackageConfiguredApiFactory(certificate);
+        using var client = factory.CreateClient();
+
+        var health = await client.GetFromJsonAsync<JsonObject>("/health");
+
+        Assert.Equal("LocalMiniKms", health?["miniKmsProvider"]?.GetValue<string>());
+        Assert.Equal("kms-v1", health?["miniKmsKeyVersion"]?.GetValue<string>());
+    }
+
     private static JsonElement DecryptPayload(JsonElement packageRoot, X509Certificate2 certificate)
     {
         using var privateKey = certificate.GetRSAPrivateKey()
