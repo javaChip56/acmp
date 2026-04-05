@@ -69,6 +69,9 @@ The API can use MiniKMS in two ways:
 - `samples/MyCompany.AuthPlatform.RecipientSample`
   Minimal recipient API that reads encrypted-file HMAC validation settings from `appsettings.json`, supports `ExternalRsaPublicKey` PEM private-key runtime decryption, and validates inbound ACMP HMAC requests.
 
+- `samples/MyCompany.AuthPlatform.ClientSample`
+  Minimal outbound client that reads encrypted-file client-signing settings from `appsettings.json`, supports `ExternalRsaPublicKey` PEM private-key runtime decryption, and signs outbound ACMP HMAC requests with `HttpClient`.
+
 ### Application and Shared Logic
 
 - `src/MyCompany.AuthPlatform.Application`
@@ -217,11 +220,20 @@ dotnet run --project .\samples\MyCompany.AuthPlatform.RecipientSample
 - [recipient_runtime_setup.md](d:/Research/acmp/docs/recipient_runtime_setup.md)
   Recipient-side encrypted package loading setup for service validation and client signing, including PEM private-key runtime configuration for `ExternalRsaPublicKey`.
 
+- [hmac_service_library.md](d:/Research/acmp/docs/hmac_service_library.md)
+  Consumer guide for `MyCompany.AuthPlatform.Hmac` in a protected recipient API.
+
+- [hmac_client_library.md](d:/Research/acmp/docs/hmac_client_library.md)
+  Consumer guide for `MyCompany.AuthPlatform.Hmac.Client` in an outbound caller.
+
 - [external_recipient_wrapping_key_design.md](d:/Research/acmp/docs/external_recipient_wrapping_key_design.md)
   Draft design for cross-platform recipient-owned package decryption keys that do not rely on X.509 certificate stores.
 
 - [README.md](d:/Research/acmp/samples/MyCompany.AuthPlatform.RecipientSample/README.md)
   Sample recipient host setup and runtime notes.
+
+- [README.md](d:/Research/acmp/samples/MyCompany.AuthPlatform.ClientSample/README.md)
+  Sample outbound client setup and runtime notes.
 
 ## Current Scope
 
