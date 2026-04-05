@@ -225,7 +225,12 @@ The package structure shall be defined explicitly so both issuer and DLL consume
 ### FRS-3.4.15 Package Protection Mechanism
 The initial release shall protect encrypted credential package files using authenticated encryption for the package payload and public-key wrapping of the package data key.
 
-The package shall be bound to an approved local X.509 certificate protection context so that only the intended DLL consumer with access to the corresponding private key can decrypt it.
+The package shall be bound to an approved recipient protection context so that only the intended DLL consumer with access to the corresponding private key or equivalent local decryption material can decrypt it.
+
+The initial supported recipient protection contexts shall include:
+
+- approved X.509 certificate bindings
+- approved externally provisioned recipient public-key bindings
 
 ### FRS-3.4.16 Required Package Metadata
 At minimum, the package format shall define required metadata fields for:
@@ -258,6 +263,40 @@ The workflow shall include:
 
 ### FRS-3.4.18 Replacement Failure Behavior
 If a replacement package file is missing, unreadable, tampered, schema-incompatible, bound to the wrong protection context, or otherwise invalid, the DLL shall reject the new package and fail securely according to the package reload rules.
+
+### FRS-3.4.19 Recipient Protection Binding Model
+The system shall model recipient protection bindings as first-class package-issuance inputs rather than only raw certificate thumbprint values.
+
+At minimum, a recipient protection binding shall identify:
+
+- binding type
+- binding identifier
+- binding status
+- key or certificate algorithm metadata
+- public binding material or local binding reference metadata
+- activation and retirement timestamps
+
+### FRS-3.4.20 Recipient Protection Binding Types
+The initial package-binding model shall support:
+
+- X.509 certificate store bindings
+- X.509 file bindings
+- externally provisioned RSA public-key bindings
+
+Future binding types may be added without changing the package cryptographic intent.
+
+### FRS-3.4.21 External RSA Public-Key Binding
+For the external RSA public-key binding type, the recipient service or client shall generate and retain its private key locally and provide only the public key to the platform.
+
+The platform shall use the registered public key to wrap the package content-encryption key and shall not require upload of the corresponding private key.
+
+### FRS-3.4.22 No Recipient Private-Key Storage
+The platform shall never persist, display, or export a recipient private key for package decryption bindings.
+
+### FRS-3.4.23 Recipient Binding Lifecycle and Audit
+The system shall support creation, activation, retirement, and review of recipient protection bindings.
+
+Recipient protection binding lifecycle actions and package issuance actions shall be audit logged with enough metadata to identify the acting administrator, target binding, target client or credential, and outcome.
 
 ---
 

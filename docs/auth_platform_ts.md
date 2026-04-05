@@ -736,10 +736,12 @@ Recommended service-side package envelope:
   "expiresAt": "2027-04-01T00:00:00Z",
   "issuedAt": "2026-04-04T10:05:00Z",
   "protectionBinding": {
-    "bindingType": "X509Thumbprint",
+    "bindingType": "X509StoreThumbprint",
+    "bindingId": "binding-1001",
     "certificateThumbprint": "ABCD1234EF567890ABCD1234EF567890ABCD1234",
     "storeLocation": "LocalMachine",
-    "storeName": "My"
+    "storeName": "My",
+    "keyEncryptionAlgorithm": "RSA-OAEP-256"
   },
   "cryptoMetadata": {
     "contentEncryptionAlgorithm": "A256GCM",
@@ -767,10 +769,12 @@ Recommended client-side package envelope:
   "expiresAt": "2027-04-01T00:00:00Z",
   "issuedAt": "2026-04-04T10:05:00Z",
   "protectionBinding": {
-    "bindingType": "X509Thumbprint",
+    "bindingType": "X509StoreThumbprint",
+    "bindingId": "binding-1001",
     "certificateThumbprint": "ABCD1234EF567890ABCD1234EF567890ABCD1234",
     "storeLocation": "LocalMachine",
-    "storeName": "My"
+    "storeName": "My",
+    "keyEncryptionAlgorithm": "RSA-OAEP-256"
   },
   "cryptoMetadata": {
     "contentEncryptionAlgorithm": "A256GCM",
@@ -785,6 +789,35 @@ Recommended client-side package envelope:
 
 #### 10.4.3 Decrypted Payload Structure
 The package envelope metadata remains outside the encrypted payload for routing and binding checks.
+
+The protection-binding envelope should be treated as a generalized recipient binding contract rather than a certificate-only structure.
+
+Recommended initial binding types:
+
+- `X509StoreThumbprint`
+- `X509File`
+- `ExternalRsaPublicKey`
+
+For `ExternalRsaPublicKey`, the package envelope should additionally carry:
+
+- `bindingId`
+- `keyId`
+- `keyVersion`
+- `publicKeyFingerprint`
+- `keyEncryptionAlgorithm`
+
+Example `ExternalRsaPublicKey` binding metadata:
+
+```json
+{
+  "bindingType": "ExternalRsaPublicKey",
+  "bindingId": "binding-2201",
+  "keyId": "orders-api-prod-rsa",
+  "keyVersion": "2026q2",
+  "publicKeyFingerprint": "SHA256:5vV4...",
+  "keyEncryptionAlgorithm": "RSA-OAEP-256"
+}
+```
 
 Recommended decrypted service-side payload:
 
@@ -819,17 +852,24 @@ The initial release should use this package protection mechanism:
 1. Generate a random AES-256 content-encryption key.
 2. Serialize the package payload as UTF-8 JSON.
 3. Encrypt the payload using AES-GCM.
-4. Wrap the AES key using RSA-OAEP-256 with the public key of the configured X.509 certificate.
-5. Store certificate binding metadata in `ProtectionBinding`.
+4. Wrap the AES key using RSA-OAEP-256 with the public key of the selected recipient protection binding.
+5. Store recipient protection binding metadata in `ProtectionBinding`.
 6. Store the AES-GCM ciphertext and authentication tag in the package envelope.
 
 The DLL consumer shall:
 
-1. locate the configured X.509 certificate from the specified certificate store
-2. confirm that the certificate thumbprint matches the package binding metadata
-3. unwrap the content-encryption key using the certificate private key
-4. verify the AES-GCM authentication tag
-5. deserialize the decrypted payload only after integrity verification succeeds
+1. resolve the configured recipient protection binding from local runtime configuration
+2. verify that the package binding metadata matches the expected local binding identity
+3. load the local private key or equivalent decryption material for that binding
+4. unwrap the content-encryption key
+5. verify the AES-GCM authentication tag
+6. deserialize the decrypted payload only after integrity verification succeeds
+
+For the initial supported binding types, resolution behavior should be:
+
+- `X509StoreThumbprint`: locate the configured certificate from the specified certificate store and confirm thumbprint or store metadata as required
+- `X509File`: load the configured certificate or private-key material from the expected file path and confirm expected binding metadata
+- `ExternalRsaPublicKey`: load the locally retained recipient private key and confirm the package `bindingId`, `keyId`, `keyVersion`, and `publicKeyFingerprint`
 
 #### 10.4.5 Binding and Validation Rules
 The DLL shall reject a package if any of the following is true:
@@ -839,10 +879,17 @@ The DLL shall reject a package if any of the following is true:
 - required envelope fields are missing
 - `credentialStatus` is not valid for use
 - `expiresAt` is in the past
-- the configured certificate cannot be found
-- the certificate thumbprint or store metadata does not match the expected protection binding
+- the configured local recipient binding cannot be resolved
+- the package binding metadata does not match the expected protection binding for the configured mode
 - key unwrap or AES-GCM authentication fails
 - `keyId` or `keyVersion` is inconsistent with the expected package file identity
+
+For `ExternalRsaPublicKey`, the DLL should also reject the package when:
+
+- the expected `bindingId` does not match
+- the expected public-key fingerprint does not match
+- the local private key is missing or unreadable
+- the local private key cannot successfully unwrap the content-encryption key
 
 #### 10.4.6 Package Replacement and Refresh Workflow
 Recommended package replacement workflow:
@@ -1003,6 +1050,7 @@ Recommended initial logical stores:
 - `Credential`
 - `CredentialScope`
 - `HmacCredentialDetail`
+- `RecipientProtectionBinding`
 - `AuditLog`
 - `AdminUser`
 - `AdminUserRoleAssignment`
@@ -1107,7 +1155,45 @@ Recommended constraints and indexes:
 - unique index on `KeyId`
 - index on (`KeyVersion`)
 
-#### 12.6.5 AdminUser
+#### 12.6.5 RecipientProtectionBinding
+Stores reusable package recipient-protection bindings, including X.509 references and externally provisioned RSA public keys.
+
+| Column | Type Direction | Required | Notes |
+|---|---|---|---|
+| `BindingId` | GUID / UUID | Yes | Primary key. |
+| `ClientId` | GUID / UUID | Yes | Foreign key to `ServiceClient.ClientId`. |
+| `BindingName` | string | Yes | Friendly operator-visible name; unique per client. |
+| `BindingType` | string | Yes | Initial values: `X509StoreThumbprint`, `X509File`, `ExternalRsaPublicKey`. |
+| `Status` | string | Yes | Recommended values: `Active`, `Retired`, `Revoked`. |
+| `Algorithm` | string | Yes | For example `RSA-3072`. |
+| `PublicKeyPem` | text | No | Public key material for `ExternalRsaPublicKey`; never private material. |
+| `PublicKeyFingerprint` | string | No | Stable fingerprint for operator verification and runtime checks. |
+| `CertificateThumbprint` | string | No | For `X509StoreThumbprint`. |
+| `StoreLocation` | string | No | For `X509StoreThumbprint`. |
+| `StoreName` | string | No | For `X509StoreThumbprint`. |
+| `CertificatePath` | string | No | For `X509File`. |
+| `PrivateKeyPathHint` | string | No | Optional deployment hint for `X509File`; not secret material. |
+| `KeyId` | string | No | Recipient-binding key identifier for external public-key bindings. |
+| `KeyVersion` | string | No | Recipient-binding key version for external public-key bindings. |
+| `ActivatedAt` | UTC timestamp | No | Activation timestamp. |
+| `RetiredAt` | UTC timestamp | No | Retirement timestamp. |
+| `Notes` | string | No | Administrative note. |
+| `CreatedAt` | UTC timestamp | Yes | Creation timestamp. |
+| `CreatedBy` | string | Yes | Actor identifier. |
+| `UpdatedAt` | UTC timestamp | Yes | Last update timestamp. |
+| `UpdatedBy` | string | Yes | Last update actor. |
+| `ConcurrencyToken` | rowversion / xmin / opaque token | No | Optimistic concurrency support. |
+
+Recommended constraints and indexes:
+
+- primary key on `BindingId`
+- foreign key from `ClientId` to `ServiceClient.ClientId`
+- unique index on (`ClientId`, `BindingName`)
+- index on (`ClientId`, `Status`)
+- index on (`BindingType`, `Status`)
+- check rule that private-key material is never stored in this table
+
+#### 12.6.6 AdminUser
 Stores local administrative identities for the embedded identity provider and management operations.
 
 | Column | Type Direction | Required | Notes |
@@ -1133,7 +1219,7 @@ Recommended constraints and indexes:
 - unique index on `Username`
 - index on (`Status`, `Username`)
 
-#### 12.6.6 AdminUserRoleAssignment
+#### 12.6.7 AdminUserRoleAssignment
 Stores assigned administrative roles as individual rows to preserve portability across SQL Server, PostgreSQL, and in-memory mode.
 
 | Column | Type Direction | Required | Notes |
@@ -1149,7 +1235,7 @@ Recommended constraints and indexes:
 - foreign key from `UserId` to `AdminUser.UserId`
 - index on (`RoleName`)
 
-#### 12.6.7 AuditLog
+#### 12.6.8 AuditLog
 Stores administrative and security events.
 
 | Column | Type Direction | Required | Notes |
@@ -1174,7 +1260,7 @@ Recommended constraints and indexes:
 - index on (`Actor`, `Timestamp`)
 - index on (`Action`, `Timestamp`)
 
-#### 12.6.8 OptionalNonce
+#### 12.6.9 OptionalNonce
 Reserved for future replay protection persistence and not required for the initial release implementation.
 
 Suggested future fields:
@@ -1189,6 +1275,7 @@ Suggested future fields:
 Recommended relationship rules:
 
 - one `ServiceClient` may have many `Credential` rows
+- one `ServiceClient` may have many `RecipientProtectionBinding` rows
 - one `Credential` may have many `CredentialScope` rows
 - one `Credential` in `HMAC` mode shall have exactly one `HmacCredentialDetail` row
 - one `Credential` may reference one replacement credential through `ReplacedByCredentialId`
@@ -1204,6 +1291,8 @@ Recommended initial integrity rules:
 - `ReplacedByCredentialId` should not equal `CredentialId`
 - `RotationGraceEndsAt` should be null unless the credential has been superseded by a replacement
 - scopes should be unique per credential
+- recipient binding private-key material should never be persisted
+- recipient binding names should be unique per client
 - admin usernames should be unique platform-wide
 - embedded-identity password hashes and salts should always be stored together and never as plaintext
 - no table or column shall store plaintext secrets
@@ -1217,6 +1306,7 @@ The demo in-memory provider should model the same logical collections as the per
 - credentials keyed by `CredentialId`
 - credential scopes keyed by (`CredentialId`, `ScopeName`)
 - HMAC details keyed by `CredentialId`
+- recipient protection bindings keyed by `BindingId`
 - admin users keyed by `UserId`
 - admin user roles keyed by (`UserId`, `RoleName`)
 - audit events keyed by `AuditId`
@@ -1263,6 +1353,10 @@ Suggested initial endpoints:
 - POST /api/clients
 - PUT /api/clients/{clientId}
 - POST /api/clients/{clientId}/disable
+- GET /api/clients/{clientId}/recipient-bindings
+- POST /api/clients/{clientId}/recipient-bindings
+- POST /api/recipient-bindings/{bindingId}/activate
+- POST /api/recipient-bindings/{bindingId}/retire
 - POST /api/clients/{clientId}/credentials/hmac
 - PUT /api/credentials/{credentialId}
 - POST /api/credentials/{credentialId}/disable
@@ -1405,7 +1499,7 @@ Validation notes:
 - `environment` should be one of `DEV`, `TEST`, `UAT`, or `PROD`
 - `owner` should capture the accountable support team or function
 
-#### 13.3.8 Create Client Response
+#### 13.3.10 Create Client Response
 
 ```json
 {
@@ -1425,7 +1519,7 @@ Validation notes:
 }
 ```
 
-#### 13.3.9 Update Client Request
+#### 13.3.11 Update Client Request
 
 ```json
 {
@@ -1439,7 +1533,28 @@ Validation notes:
 }
 ```
 
-#### 13.3.10 Issue HMAC Credential Request
+#### 13.3.12 Create Recipient Protection Binding Request
+
+```json
+{
+  "bindingName": "orders-api-prod-rsa-2026q2",
+  "bindingType": "ExternalRsaPublicKey",
+  "algorithm": "RSA-3072",
+  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----",
+  "keyId": "orders-api-prod-rsa",
+  "keyVersion": "2026q2",
+  "notes": "Primary package decryption key for Orders API production"
+}
+```
+
+Validation notes:
+
+- `bindingName` should be unique within the target client
+- `bindingType` should initially allow `X509StoreThumbprint`, `X509File`, and `ExternalRsaPublicKey`
+- `ExternalRsaPublicKey` should require `publicKeyPem`, `algorithm`, `keyId`, and `keyVersion`
+- the platform must reject any request that includes private-key material
+
+#### 13.3.13 Issue HMAC Credential Request
 
 ```json
 {
@@ -1461,7 +1576,7 @@ Validation notes:
 - `expiresAt` should be in the future when supplied
 - `hmacAlgorithm` should initially allow only `HMACSHA256`
 
-#### 13.3.11 Issue HMAC Credential Response
+#### 13.3.14 Issue HMAC Credential Response
 
 ```json
 {
@@ -1484,7 +1599,7 @@ Validation notes:
 
 The `secret` field is returned only during issuance and shall not be returned by later read or list operations.
 
-#### 13.3.12 Update Credential Request
+#### 13.3.15 Update Credential Request
 
 ```json
 {
@@ -1497,7 +1612,7 @@ The `secret` field is returned only during issuance and shall not be returned by
 }
 ```
 
-#### 13.3.13 Rotate Credential Request
+#### 13.3.16 Rotate Credential Request
 
 ```json
 {
@@ -1519,7 +1634,7 @@ Validation notes:
 - the maximum allowed grace-period duration in the initial release should be 30 days
 - requests exceeding 14 days should require an explicit operational reason
 
-#### 13.3.14 Revoke Credential Request
+#### 13.3.17 Revoke Credential Request
 
 ```json
 {
@@ -1527,7 +1642,25 @@ Validation notes:
 }
 ```
 
-#### 13.3.15 Encrypted Package Issuance Response
+#### 13.3.18 Encrypted Package Issuance Request
+
+```json
+{
+  "bindingType": "ExternalRsaPublicKey",
+  "recipientBindingId": "binding-2201",
+  "reason": "Initial package issue for Orders API production"
+}
+```
+
+Validation notes:
+
+- `recipientBindingId` should reference an active binding for the credential's parent client
+- `bindingType` should match the referenced binding record
+- `reason` should be recorded in audit when supplied
+
+For backward-compatible direct-binding requests, the request model may still accept inline X.509 binding metadata, but the preferred direction should be issuance by `recipientBindingId`.
+
+#### 13.3.19 Encrypted Package Issuance Response
 
 ```json
 {
@@ -1537,13 +1670,15 @@ Validation notes:
   "fileName": "key-uat-001.service.acmppkg.json",
   "contentType": "application/vnd.acmp.hmac-service-package+json",
   "issuedAt": "2026-04-04T10:05:00Z",
-  "keyVersion": "kms-v1"
+  "keyVersion": "kms-v1",
+  "bindingId": "binding-2201",
+  "bindingType": "ExternalRsaPublicKey"
 }
 ```
 
 For browser-based admin workflows, the binary file may be returned as a download stream with metadata reflected in response headers.
 
-#### 13.3.16 Credential Metadata List Response
+#### 13.3.20 Credential Metadata List Response
 
 ```json
 {
@@ -1574,7 +1709,7 @@ For browser-based admin workflows, the binary file may be returned as a download
 
 List operations shall not include plaintext secret values.
 
-#### 13.3.11 Audit List Response
+#### 13.3.21 Audit List Response
 
 ```json
 {
@@ -1713,6 +1848,7 @@ The initial release should implement the following administrative roles:
 | Rotate credentials | No | Yes | Yes |
 | Revoke credentials | No | Yes | Yes |
 | Disable credentials | No | Yes | Yes |
+| Manage recipient protection bindings | No | Yes | Yes |
 | Issue encrypted packages | No | Yes | Yes |
 | Configure grace period from 7 to 14 days | No | Yes | Yes |
 | Configure grace period longer than 14 days up to 30 days | No | No | Yes |
@@ -1735,6 +1871,10 @@ Recommended initial endpoint authorization:
 - `PUT /api/admin/users/{userId}/roles`: `AccessAdministrator` only
 - `GET /api/clients`: `AccessViewer`, `AccessOperator`, or `AccessAdministrator`
 - `GET /api/clients/{clientId}`: `AccessViewer`, `AccessOperator`, or `AccessAdministrator`
+- `GET /api/clients/{clientId}/recipient-bindings`: `AccessOperator` or `AccessAdministrator`
+- `POST /api/clients/{clientId}/recipient-bindings`: `AccessOperator` or `AccessAdministrator`
+- `POST /api/recipient-bindings/{bindingId}/activate`: `AccessOperator` or `AccessAdministrator`
+- `POST /api/recipient-bindings/{bindingId}/retire`: `AccessOperator` or `AccessAdministrator`
 - `GET /api/clients/{clientId}/credentials`: `AccessViewer`, `AccessOperator`, or `AccessAdministrator`
 - `GET /api/credentials/{credentialId}`: `AccessViewer`, `AccessOperator`, or `AccessAdministrator`
 - `POST /api/clients`: `AccessOperator` or `AccessAdministrator`
