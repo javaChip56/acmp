@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Net.Http.Headers;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -11,6 +12,15 @@ namespace MyCompany.AuthPlatform.Api.IntegrationTests;
 
 public sealed class MiniKmsDatabaseIntegrationTests
 {
+    private static readonly MiniKmsInternalJwtOptions IntegrationJwtOptions = new()
+    {
+        Issuer = "acmp-internal-services",
+        Audience = "mini-kms-internal",
+        SigningKey = "AcmpMiniKmsInternalSigningKey123456789!",
+        Subject = "acmp-api",
+        TokenLifetimeMinutes = 5
+    };
+
     [Fact]
     [Trait("Category", "SqlServer")]
     public async Task SqlServer_MiniKmsStatePersistsAcrossRestart()
@@ -28,8 +38,12 @@ public sealed class MiniKmsDatabaseIntegrationTests
         {
             ["MiniKms:DemoModeEnabled"] = "false",
             ["MiniKms:PersistenceProvider"] = "SqlServer",
-            ["MiniKms:ServiceApiKey"] = "integration-test-api-key",
             ["MiniKms:ActiveKeyVersion"] = "kms-v1",
+            ["MiniKms:InternalJwt:Issuer"] = IntegrationJwtOptions.Issuer,
+            ["MiniKms:InternalJwt:Audience"] = IntegrationJwtOptions.Audience,
+            ["MiniKms:InternalJwt:SigningKey"] = IntegrationJwtOptions.SigningKey,
+            ["MiniKms:InternalJwt:Subject"] = IntegrationJwtOptions.Subject,
+            ["MiniKms:InternalJwt:TokenLifetimeMinutes"] = IntegrationJwtOptions.TokenLifetimeMinutes.ToString(),
             ["MiniKms:SqlServer:ConnectionString"] = connectionString,
             ["MiniKms:MasterKeys:kms-v1"] = "QWNtcFNlY3JldE1hc3RlcktleUZvckttc3YxIUFCQ0Q="
         };
@@ -55,8 +69,12 @@ public sealed class MiniKmsDatabaseIntegrationTests
         {
             ["MiniKms:DemoModeEnabled"] = "false",
             ["MiniKms:PersistenceProvider"] = "Postgres",
-            ["MiniKms:ServiceApiKey"] = "integration-test-api-key",
             ["MiniKms:ActiveKeyVersion"] = "kms-v1",
+            ["MiniKms:InternalJwt:Issuer"] = IntegrationJwtOptions.Issuer,
+            ["MiniKms:InternalJwt:Audience"] = IntegrationJwtOptions.Audience,
+            ["MiniKms:InternalJwt:SigningKey"] = IntegrationJwtOptions.SigningKey,
+            ["MiniKms:InternalJwt:Subject"] = IntegrationJwtOptions.Subject,
+            ["MiniKms:InternalJwt:TokenLifetimeMinutes"] = IntegrationJwtOptions.TokenLifetimeMinutes.ToString(),
             ["MiniKms:Postgres:ConnectionString"] = connectionString,
             ["MiniKms:MasterKeys:kms-v1"] = "QWNtcFNlY3JldE1hc3RlcktleUZvckttc3YxIUFCQ0Q="
         };
@@ -76,7 +94,7 @@ public sealed class MiniKmsDatabaseIntegrationTests
             {
                 Content = JsonContent.Create(new CreateKeyVersionRequest(newKeyVersion, null, true))
             };
-            createRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+            AuthorizeMiniKmsRequest(createRequest);
             var createResponse = await firstClient.SendAsync(createRequest);
             createResponse.EnsureSuccessStatusCode();
         }
@@ -85,13 +103,13 @@ public sealed class MiniKmsDatabaseIntegrationTests
         using var secondClient = secondFactory.CreateClient();
 
         var keysRequest = new HttpRequestMessage(HttpMethod.Get, "/internal/minikms/keys");
-        keysRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+        AuthorizeMiniKmsRequest(keysRequest);
         var keysResponse = await secondClient.SendAsync(keysRequest);
         keysResponse.EnsureSuccessStatusCode();
         var keys = await keysResponse.Content.ReadFromJsonAsync<MiniKmsKeyVersionSummary[]>();
 
         var auditRequest = new HttpRequestMessage(HttpMethod.Get, "/internal/minikms/audit?take=20");
-        auditRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+        AuthorizeMiniKmsRequest(auditRequest);
         var auditResponse = await secondClient.SendAsync(auditRequest);
         auditResponse.EnsureSuccessStatusCode();
         var auditEntries = await auditResponse.Content.ReadFromJsonAsync<MiniKmsAuditEntry[]>();
@@ -123,5 +141,12 @@ public sealed class MiniKmsDatabaseIntegrationTests
                 configBuilder.AddInMemoryCollection(_overrides);
             });
         }
+    }
+
+    private static void AuthorizeMiniKmsRequest(HttpRequestMessage request, string subject = "acmp-api")
+    {
+        request.Headers.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            MiniKmsInternalJwtTokenProvider.CreateToken(IntegrationJwtOptions, subject));
     }
 }

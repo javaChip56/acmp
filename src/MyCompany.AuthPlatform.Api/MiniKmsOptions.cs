@@ -1,3 +1,5 @@
+using MyCompany.Security.MiniKms.Client;
+
 namespace MyCompany.AuthPlatform.Api;
 
 internal sealed class MiniKmsOptions
@@ -19,7 +21,7 @@ internal sealed class RemoteMiniKmsOptions
 {
     public string BaseUrl { get; set; } = "https://localhost:7190";
 
-    public string ApiKey { get; set; } = "dev-minikms-api-key";
-
     public int TimeoutSeconds { get; set; } = 15;
+
+    public MiniKmsInternalJwtOptions InternalJwt { get; set; } = new();
 }

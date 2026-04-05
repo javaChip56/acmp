@@ -1,3 +1,5 @@
+using MyCompany.Security.MiniKms.Client;
+
 namespace MyCompany.Security.MiniKms;
 
 internal sealed class MiniKmsServiceOptions
@@ -14,9 +16,9 @@ internal sealed class MiniKmsServiceOptions
 
     public string ActiveKeyVersion { get; set; } = "kms-v1";
 
-    public string ServiceApiKey { get; set; } = "dev-minikms-api-key";
-
     public string StateFilePath { get; set; } = "App_Data/minikms-state.json";
+
+    public MiniKmsInternalJwtOptions InternalJwt { get; set; } = new();
 
     public MiniKmsSqlServerOptions SqlServer { get; set; } = new();
 

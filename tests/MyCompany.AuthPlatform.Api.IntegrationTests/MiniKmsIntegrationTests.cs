@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.Http.Headers;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -16,12 +17,21 @@ namespace MyCompany.AuthPlatform.Api.IntegrationTests;
 
 public sealed class MiniKmsIntegrationTests
 {
+    private static readonly MiniKmsInternalJwtOptions IntegrationJwtOptions = new()
+    {
+        Issuer = "acmp-internal-services",
+        Audience = "mini-kms-internal",
+        SigningKey = "AcmpMiniKmsInternalSigningKey123456789!",
+        Subject = "acmp-api",
+        TokenLifetimeMinutes = 5
+    };
+
     [Fact]
     public void RemoteMiniKmsClient_RoundTripsSecretAgainstMiniKmsService()
     {
         using var factory = new MiniKmsFactory();
         using var httpClient = factory.CreateClient();
-        var remoteMiniKms = new RemoteMiniKmsClient(httpClient, "integration-test-api-key");
+        var remoteMiniKms = new RemoteMiniKmsClient(httpClient, IntegrationJwtOptions);
 
         var secret = remoteMiniKms.GenerateRandomSecret();
         var encrypted = remoteMiniKms.Encrypt(secret);
@@ -33,7 +43,7 @@ public sealed class MiniKmsIntegrationTests
     }
 
     [Fact]
-    public async Task MiniKmsService_RejectsMissingApiKey()
+    public async Task MiniKmsService_RejectsMissingBearerToken()
     {
         using var factory = new MiniKmsFactory();
         using var httpClient = factory.CreateClient();
@@ -67,19 +77,19 @@ public sealed class MiniKmsIntegrationTests
         {
             Content = JsonContent.Create(new CreateKeyVersionRequest("kms-v2", null, false))
         };
-        createRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+        AuthorizeMiniKmsRequest(createRequest);
 
         var createResponse = await client.SendAsync(createRequest);
         createResponse.EnsureSuccessStatusCode();
 
         var activateRequest = new HttpRequestMessage(HttpMethod.Post, "/internal/minikms/keys/kms-v2/activate");
-        activateRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+        AuthorizeMiniKmsRequest(activateRequest);
 
         var activateResponse = await client.SendAsync(activateRequest);
         activateResponse.EnsureSuccessStatusCode();
 
         var keysRequest = new HttpRequestMessage(HttpMethod.Get, "/internal/minikms/keys");
-        keysRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+        AuthorizeMiniKmsRequest(keysRequest);
 
         var keysResponse = await client.SendAsync(keysRequest);
         keysResponse.EnsureSuccessStatusCode();
@@ -101,7 +111,7 @@ public sealed class MiniKmsIntegrationTests
         {
             Content = JsonContent.Create(new CreateKeyVersionRequest("kms-v2", null, true))
         };
-        rotateRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+        AuthorizeMiniKmsRequest(rotateRequest);
         var rotateResponse = await factory.MiniKmsClient.SendAsync(rotateRequest);
         rotateResponse.EnsureSuccessStatusCode();
 
@@ -122,25 +132,23 @@ public sealed class MiniKmsIntegrationTests
         {
             Content = JsonContent.Create(new CreateKeyVersionRequest("kms-v2", null, false))
         };
-        createRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
-        createRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ActorHeaderName, "ops-user");
+        AuthorizeMiniKmsRequest(createRequest, "ops-user");
         var createResponse = await client.SendAsync(createRequest);
         createResponse.EnsureSuccessStatusCode();
 
         var retireRequest = new HttpRequestMessage(HttpMethod.Post, "/internal/minikms/keys/kms-v2/retire");
-        retireRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
-        retireRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ActorHeaderName, "ops-user");
+        AuthorizeMiniKmsRequest(retireRequest, "ops-user");
         var retireResponse = await client.SendAsync(retireRequest);
         retireResponse.EnsureSuccessStatusCode();
 
         var keysRequest = new HttpRequestMessage(HttpMethod.Get, "/internal/minikms/keys");
-        keysRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+        AuthorizeMiniKmsRequest(keysRequest);
         var keysResponse = await client.SendAsync(keysRequest);
         keysResponse.EnsureSuccessStatusCode();
         var keys = await keysResponse.Content.ReadFromJsonAsync<MiniKmsKeyVersionSummary[]>();
 
         var auditRequest = new HttpRequestMessage(HttpMethod.Get, "/internal/minikms/audit?take=10");
-        auditRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+        AuthorizeMiniKmsRequest(auditRequest);
         var auditResponse = await client.SendAsync(auditRequest);
         auditResponse.EnsureSuccessStatusCode();
         var auditEntries = await auditResponse.Content.ReadFromJsonAsync<MiniKmsAuditEntry[]>();
@@ -159,7 +167,7 @@ public sealed class MiniKmsIntegrationTests
         using var client = factory.CreateClient();
 
         var retireRequest = new HttpRequestMessage(HttpMethod.Post, "/internal/minikms/keys/kms-v1/retire");
-        retireRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+        AuthorizeMiniKmsRequest(retireRequest);
         var retireResponse = await client.SendAsync(retireRequest);
 
         Assert.Equal(HttpStatusCode.Conflict, retireResponse.StatusCode);
@@ -179,7 +187,7 @@ public sealed class MiniKmsIntegrationTests
                 {
                     Content = JsonContent.Create(new CreateKeyVersionRequest("kms-v3", null, true))
                 };
-                createRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+                AuthorizeMiniKmsRequest(createRequest);
                 var createResponse = await firstClient.SendAsync(createRequest);
                 createResponse.EnsureSuccessStatusCode();
             }
@@ -188,7 +196,7 @@ public sealed class MiniKmsIntegrationTests
             using var secondClient = secondFactory.CreateClient();
 
             var keysRequest = new HttpRequestMessage(HttpMethod.Get, "/internal/minikms/keys");
-            keysRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+            AuthorizeMiniKmsRequest(keysRequest);
             var keysResponse = await secondClient.SendAsync(keysRequest);
             keysResponse.EnsureSuccessStatusCode();
             var keys = await keysResponse.Content.ReadFromJsonAsync<MiniKmsKeyVersionSummary[]>();
@@ -219,7 +227,7 @@ public sealed class MiniKmsIntegrationTests
             {
                 Content = JsonContent.Create(new CreateKeyVersionRequest("kms-demo-2", null, true))
             };
-            createRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+            AuthorizeMiniKmsRequest(createRequest);
             var createResponse = await firstClient.SendAsync(createRequest);
             createResponse.EnsureSuccessStatusCode();
         }
@@ -228,7 +236,7 @@ public sealed class MiniKmsIntegrationTests
         using var secondClient = secondFactory.CreateClient();
 
         var keysRequest = new HttpRequestMessage(HttpMethod.Get, "/internal/minikms/keys");
-        keysRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+        AuthorizeMiniKmsRequest(keysRequest);
         var keysResponse = await secondClient.SendAsync(keysRequest);
         keysResponse.EnsureSuccessStatusCode();
         var keys = await keysResponse.Content.ReadFromJsonAsync<MiniKmsKeyVersionSummary[]>();
@@ -269,9 +277,13 @@ public sealed class MiniKmsIntegrationTests
             {
                 var overrides = new Dictionary<string, string?>
                 {
-                    ["MiniKms:ServiceApiKey"] = "integration-test-api-key",
                     ["MiniKms:DemoModeEnabled"] = _demoModeEnabled.ToString(),
                     ["MiniKms:ActiveKeyVersion"] = "kms-v1",
+                    ["MiniKms:InternalJwt:Issuer"] = IntegrationJwtOptions.Issuer,
+                    ["MiniKms:InternalJwt:Audience"] = IntegrationJwtOptions.Audience,
+                    ["MiniKms:InternalJwt:SigningKey"] = IntegrationJwtOptions.SigningKey,
+                    ["MiniKms:InternalJwt:Subject"] = IntegrationJwtOptions.Subject,
+                    ["MiniKms:InternalJwt:TokenLifetimeMinutes"] = IntegrationJwtOptions.TokenLifetimeMinutes.ToString(),
                     ["MiniKms:MasterKeys:kms-v1"] = "QWNtcFNlY3JldE1hc3RlcktleUZvckttc3YxIUFCQ0Q="
                 };
 
@@ -320,8 +332,12 @@ public sealed class MiniKmsIntegrationTests
                     ["MiniKms:Provider"] = "RemoteMiniKms",
                     ["MiniKms:ActiveKeyVersion"] = "kms-v1",
                     ["MiniKms:Remote:BaseUrl"] = "https://localhost:7190",
-                    ["MiniKms:Remote:ApiKey"] = "integration-test-api-key",
-                    ["MiniKms:Remote:TimeoutSeconds"] = "15"
+                    ["MiniKms:Remote:TimeoutSeconds"] = "15",
+                    ["MiniKms:Remote:InternalJwt:Issuer"] = IntegrationJwtOptions.Issuer,
+                    ["MiniKms:Remote:InternalJwt:Audience"] = IntegrationJwtOptions.Audience,
+                    ["MiniKms:Remote:InternalJwt:SigningKey"] = IntegrationJwtOptions.SigningKey,
+                    ["MiniKms:Remote:InternalJwt:Subject"] = IntegrationJwtOptions.Subject,
+                    ["MiniKms:Remote:InternalJwt:TokenLifetimeMinutes"] = IntegrationJwtOptions.TokenLifetimeMinutes.ToString()
                 });
             });
             builder.ConfigureServices(services =>
@@ -329,7 +345,7 @@ public sealed class MiniKmsIntegrationTests
                 services.RemoveAll<IMiniKms>();
                 services.RemoveAll<IHmacSecretProtector>();
                 services.AddSingleton<IMiniKms>(_ =>
-                    new RemoteMiniKmsClient(MiniKmsClient, "integration-test-api-key"));
+                    new RemoteMiniKmsClient(MiniKmsClient, IntegrationJwtOptions));
                 services.AddSingleton<IHmacSecretProtector>(serviceProvider =>
                     new MiniKmsHmacSecretProtector(serviceProvider.GetRequiredService<IMiniKms>()));
             });
@@ -345,5 +361,12 @@ public sealed class MiniKmsIntegrationTests
 
             base.Dispose(disposing);
         }
+    }
+
+    private static void AuthorizeMiniKmsRequest(HttpRequestMessage request, string subject = "acmp-api")
+    {
+        request.Headers.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            MiniKmsInternalJwtTokenProvider.CreateToken(IntegrationJwtOptions, subject));
     }
 }

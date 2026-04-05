@@ -152,7 +152,7 @@ builder.Services.AddSingleton<IMiniKms>(serviceProvider =>
         var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
         return new RemoteMiniKmsClient(
             httpClientFactory.CreateClient(RemoteMiniKmsClient.HttpClientName),
-            options.Remote.ApiKey);
+            options.Remote.InternalJwt);
     }
 
     throw new InvalidOperationException(
@@ -563,15 +563,12 @@ static void ValidateRemoteMiniKmsOptions(RemoteMiniKmsOptions options)
         throw new InvalidOperationException("MiniKms:Remote:BaseUrl must be a valid absolute URI when MiniKms:Provider is RemoteMiniKms.");
     }
 
-    if (string.IsNullOrWhiteSpace(options.ApiKey))
-    {
-        throw new InvalidOperationException("MiniKms:Remote:ApiKey must be configured when MiniKms:Provider is RemoteMiniKms.");
-    }
-
     if (options.TimeoutSeconds <= 0)
     {
         throw new InvalidOperationException("MiniKms:Remote:TimeoutSeconds must be greater than zero when MiniKms:Provider is RemoteMiniKms.");
     }
+
+    ValidateMiniKmsInternalJwtOptions(options.InternalJwt, "MiniKms:Remote:InternalJwt");
 }
 
 static void ConfigureLocalJwtBearer(JwtBearerOptions options, EmbeddedIdentityAuthOptions embeddedIdentityOptions, string challengeMessage)
@@ -591,6 +588,34 @@ static void ConfigureLocalJwtBearer(JwtBearerOptions options, EmbeddedIdentityAu
         RoleClaimType = ClaimTypes.Role,
     };
     ConfigureBearerErrorResponses(options, challengeMessage);
+}
+
+static void ValidateMiniKmsInternalJwtOptions(MiniKmsInternalJwtOptions options, string configPath)
+{
+    if (string.IsNullOrWhiteSpace(options.Issuer))
+    {
+        throw new InvalidOperationException($"{configPath}:Issuer must be configured.");
+    }
+
+    if (string.IsNullOrWhiteSpace(options.Audience))
+    {
+        throw new InvalidOperationException($"{configPath}:Audience must be configured.");
+    }
+
+    if (string.IsNullOrWhiteSpace(options.SigningKey) || Encoding.UTF8.GetByteCount(options.SigningKey) < 32)
+    {
+        throw new InvalidOperationException($"{configPath}:SigningKey must be configured and be at least 32 bytes long.");
+    }
+
+    if (string.IsNullOrWhiteSpace(options.Subject))
+    {
+        throw new InvalidOperationException($"{configPath}:Subject must be configured.");
+    }
+
+    if (options.TokenLifetimeMinutes <= 0)
+    {
+        throw new InvalidOperationException($"{configPath}:TokenLifetimeMinutes must be greater than zero.");
+    }
 }
 
 static void ConfigureBearerErrorResponses(JwtBearerOptions options, string challengeMessage)

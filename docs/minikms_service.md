@@ -22,9 +22,15 @@ The service uses the `MiniKms` config section in [appsettings.json](/d:/Research
   "MiniKms": {
     "DemoModeEnabled": false,
     "PersistenceProvider": "File",
-    "ServiceApiKey": "dev-minikms-api-key",
     "ActiveKeyVersion": "kms-v1",
     "StateFilePath": "App_Data/minikms-state.json",
+    "InternalJwt": {
+      "Issuer": "acmp-internal-services",
+      "Audience": "mini-kms-internal",
+      "SigningKey": "AcmpMiniKmsInternalSigningKey123456789!",
+      "Subject": "acmp-api",
+      "TokenLifetimeMinutes": 5
+    },
     "SqlServer": {
       "ConnectionString": "Server=(localdb)\\MSSQLLocalDB;Database=AcmpMiniKms;Trusted_Connection=True;TrustServerCertificate=True"
     },
@@ -50,8 +56,8 @@ Internal endpoints:
 - `POST /internal/minikms/keys/{keyVersion}/retire`
 - `GET /internal/minikms/audit`
 
-The internal endpoints require the `X-MiniKms-Api-Key` header.
-They also accept an optional `X-MiniKms-Actor` header for audit attribution.
+The internal endpoints require a signed bearer token issued for the internal MiniKMS audience.
+Actor attribution is taken from the token subject.
 
 The MiniKMS service supports these persistence modes:
 
@@ -110,8 +116,14 @@ Update the main API config in [appsettings.json](/d:/Research/acmp/src/MyCompany
     "ActiveKeyVersion": "kms-v1",
     "Remote": {
       "BaseUrl": "https://localhost:7190",
-      "ApiKey": "dev-minikms-api-key",
-      "TimeoutSeconds": 15
+      "TimeoutSeconds": 15,
+      "InternalJwt": {
+        "Issuer": "acmp-internal-services",
+        "Audience": "mini-kms-internal",
+        "SigningKey": "AcmpMiniKmsInternalSigningKey123456789!",
+        "Subject": "acmp-api",
+        "TokenLifetimeMinutes": 5
+      }
     }
   }
 }
@@ -124,7 +136,8 @@ When `Provider` is `RemoteMiniKms`, the API keeps using the same application-lay
 Create a new key version:
 
 ```powershell
-$headers = @{ "X-MiniKms-Api-Key" = "dev-minikms-api-key" }
+$token = "<signed bearer token for the mini-kms-internal audience>"
+$headers = @{ "Authorization" = "Bearer $token" }
 
 Invoke-RestMethod `
   -Method Post `
@@ -166,8 +179,6 @@ Invoke-RestMethod `
 Read recent MiniKMS audit events:
 
 ```powershell
-$headers["X-MiniKms-Actor"] = "ops-user"
-
 Invoke-RestMethod `
   -Method Get `
   -Uri https://localhost:7190/internal/minikms/audit?take=20 `
@@ -178,6 +189,7 @@ Invoke-RestMethod `
 
 - `ActiveKeyVersion` remains explicit in the API config so the host can expose it in `/health` and use it as the default key version for new secrets.
 - `MasterKeys` are only used by the local provider path in the main API. In remote mode, the actual wrapping keys live in the MiniKMS service process.
+- The API-to-MiniKMS trust path now uses signed internal JWT/service tokens rather than a shared static API key.
 - In normal mode, MiniKMS persists key-ring state and audit history through the configured provider. `File` is the default local option, while `SqlServer` and `Postgres` are the intended durable deployment targets.
 - MiniKMS key states are currently `Active`, `Available`, and `Retired`. Retired keys are decrypt-only.
 - Future implementations such as Windows Certificate Store or DPAPI-backed providers can still be added without changing the application-layer contracts.

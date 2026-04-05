@@ -39,8 +39,12 @@
         "ASPNETCORE_ENVIRONMENT": "Development",
         "MiniKms__Provider": "RemoteMiniKms",
         "MiniKms__Remote__BaseUrl": "https://localhost:7190",
-        "MiniKms__Remote__ApiKey": "dev-minikms-api-key",
-        "MiniKms__Remote__TimeoutSeconds": "15"
+        "MiniKms__Remote__TimeoutSeconds": "15",
+        "MiniKms__Remote__InternalJwt__Issuer": "acmp-internal-services",
+        "MiniKms__Remote__InternalJwt__Audience": "mini-kms-internal",
+        "MiniKms__Remote__InternalJwt__SigningKey": "AcmpMiniKmsInternalSigningKey123456789!",
+        "MiniKms__Remote__InternalJwt__Subject": "acmp-api",
+        "MiniKms__Remote__InternalJwt__TokenLifetimeMinutes": "5"
       }
     },
     "IIS Express": {

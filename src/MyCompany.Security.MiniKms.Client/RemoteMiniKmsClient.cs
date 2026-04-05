@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Net.Http.Headers;
 using MyCompany.AuthPlatform.Application;
 
 namespace MyCompany.Security.MiniKms.Client;
@@ -6,18 +7,14 @@ namespace MyCompany.Security.MiniKms.Client;
 public sealed class RemoteMiniKmsClient : IMiniKms
 {
     public const string HttpClientName = "RemoteMiniKms";
-    public const string ApiKeyHeaderName = "X-MiniKms-Api-Key";
-    public const string ActorHeaderName = "X-MiniKms-Actor";
 
     private readonly HttpClient _httpClient;
-    private readonly string _apiKey;
+    private readonly MiniKmsInternalJwtTokenProvider _tokenProvider;
 
-    public RemoteMiniKmsClient(HttpClient httpClient, string apiKey)
+    public RemoteMiniKmsClient(HttpClient httpClient, MiniKmsInternalJwtOptions tokenOptions)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
-        _apiKey = string.IsNullOrWhiteSpace(apiKey)
-            ? throw new ArgumentException("A MiniKMS API key is required for the remote provider.", nameof(apiKey))
-            : apiKey.Trim();
+        _tokenProvider = new MiniKmsInternalJwtTokenProvider(tokenOptions);
     }
 
     public string ProviderName => "RemoteMiniKms";
@@ -97,8 +94,7 @@ public sealed class RemoteMiniKmsClient : IMiniKms
         {
             Content = content
         };
-        request.Headers.TryAddWithoutValidation(ApiKeyHeaderName, _apiKey);
-        request.Headers.TryAddWithoutValidation(ActorHeaderName, "acmp-api");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _tokenProvider.GetAccessToken());
         return request;
     }
 

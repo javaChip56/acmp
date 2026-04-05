@@ -1,5 +1,10 @@
+using System.Security.Claims;
+using System.Text;
+using System.IdentityModel.Tokens.Jwt;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 using MyCompany.AuthPlatform.Application;
 using MyCompany.Security.MiniKms;
 using MyCompany.Security.MiniKms.Client;
@@ -10,15 +15,70 @@ builder.Services.Configure<JsonOptions>(_ => { });
 builder.Services.Configure<MiniKmsServiceOptions>(
     builder.Configuration.GetSection(MiniKmsServiceOptions.SectionName));
 
+var configuredOptions = builder.Configuration
+    .GetSection(MiniKmsServiceOptions.SectionName)
+    .Get<MiniKmsServiceOptions>()
+    ?? new MiniKmsServiceOptions();
+
+ValidateMiniKmsInternalJwtOptions(configuredOptions.InternalJwt);
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = configuredOptions.InternalJwt.Issuer,
+            ValidateAudience = true,
+            ValidAudience = configuredOptions.InternalJwt.Audience,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(configuredOptions.InternalJwt.SigningKey)),
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(1),
+            NameClaimType = JwtRegisteredClaimNames.Sub,
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnChallenge = async context =>
+            {
+                context.HandleResponse();
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    errorCode = "minikms_authentication_required",
+                    message = "A valid internal bearer token is required."
+                });
+            },
+            OnForbidden = async context =>
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    errorCode = "minikms_forbidden",
+                    message = "The bearer token is not permitted to access MiniKMS internal endpoints."
+                });
+            }
+        };
+    });
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("MiniKmsInternalApi", policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.RequireClaim(
+            MiniKmsInternalJwtTokenProvider.ScopeClaimType,
+            MiniKmsInternalJwtTokenProvider.RequiredScope);
+    });
+});
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<IMiniKmsStateStore>(serviceProvider =>
 {
     var options = serviceProvider.GetRequiredService<IOptions<MiniKmsServiceOptions>>().Value;
-    if (string.IsNullOrWhiteSpace(options.ServiceApiKey))
-    {
-        throw new InvalidOperationException("MiniKms:ServiceApiKey must be configured for the MiniKMS service.");
-    }
 
     var keys = options.MasterKeys.ToDictionary(
         pair => pair.Key,
@@ -77,6 +137,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseAuthentication();
+app.UseAuthorization();
 
 var miniKms = app.Services.GetRequiredService<IMiniKms>();
 var options = app.Services.GetRequiredService<IOptions<MiniKmsServiceOptions>>().Value;
@@ -94,21 +156,7 @@ app.MapGet("/health", () =>
 .WithOpenApi();
 
 var internalApi = app.MapGroup("/internal/minikms");
-internalApi.AddEndpointFilter(async (context, next) =>
-{
-    var configuredApiKey = options.ServiceApiKey?.Trim();
-    var providedApiKey = context.HttpContext.Request.Headers[RemoteMiniKmsClient.ApiKeyHeaderName].ToString();
-
-    if (string.IsNullOrWhiteSpace(configuredApiKey) ||
-        !string.Equals(providedApiKey, configuredApiKey, StringComparison.Ordinal))
-    {
-        return Results.Json(
-            new { errorCode = "minikms_forbidden", message = "A valid MiniKMS API key is required." },
-            statusCode: StatusCodes.Status401Unauthorized);
-    }
-
-    return await next(context);
-});
+internalApi.RequireAuthorization("MiniKmsInternalApi");
 
 internalApi.MapPost("/generate-secret", (GenerateSecretRequest request, HttpContext httpContext) =>
 {
@@ -300,8 +348,28 @@ internalApi.MapPost("/keys/{keyVersion}/retire", (string keyVersion, HttpContext
 
 static string ResolveActor(HttpContext httpContext)
 {
-    var actor = httpContext.Request.Headers[RemoteMiniKmsClient.ActorHeaderName].ToString();
+    var actor = httpContext.User.FindFirstValue(JwtRegisteredClaimNames.Sub) ??
+        httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier) ??
+        httpContext.User.Identity?.Name;
     return string.IsNullOrWhiteSpace(actor) ? "system" : actor.Trim();
+}
+
+static void ValidateMiniKmsInternalJwtOptions(MiniKmsInternalJwtOptions options)
+{
+    if (string.IsNullOrWhiteSpace(options.Issuer))
+    {
+        throw new InvalidOperationException("MiniKms:InternalJwt:Issuer must be configured for the MiniKMS service.");
+    }
+
+    if (string.IsNullOrWhiteSpace(options.Audience))
+    {
+        throw new InvalidOperationException("MiniKms:InternalJwt:Audience must be configured for the MiniKMS service.");
+    }
+
+    if (string.IsNullOrWhiteSpace(options.SigningKey) || Encoding.UTF8.GetByteCount(options.SigningKey) < 32)
+    {
+        throw new InvalidOperationException("MiniKms:InternalJwt:SigningKey must be configured and be at least 32 bytes long for the MiniKMS service.");
+    }
 }
 
 app.Run();
