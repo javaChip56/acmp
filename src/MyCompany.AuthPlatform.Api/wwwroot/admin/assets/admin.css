@@ -72,6 +72,15 @@ body {
   background: linear-gradient(135deg, #ffffff 0%, #eff6ff 100%);
 }
 
+.content-card .card-header .card-title {
+  float: none;
+  margin: 0;
+}
+
+.content-card .card-header > div {
+  min-width: 0;
+}
+
 .admin-section {
   display: block;
 }
