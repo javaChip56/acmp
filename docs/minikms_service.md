@@ -35,8 +35,27 @@ Internal endpoints:
 - `POST /internal/minikms/generate-secret`
 - `POST /internal/minikms/encrypt`
 - `POST /internal/minikms/decrypt`
+- `GET /internal/minikms/keys`
+- `POST /internal/minikms/keys`
+- `POST /internal/minikms/keys/{keyVersion}/activate`
 
 The internal endpoints require the `X-MiniKms-Api-Key` header.
+
+## Local split-process startup
+
+Development launch profiles now line up by default:
+
+- MiniKMS service: `https://localhost:7190`
+- Main API remote MiniKMS profile: `https-remote-minikms`
+
+Run them separately:
+
+```powershell
+dotnet run --project .\src\MyCompany.Security.MiniKms --launch-profile https
+dotnet run --project .\src\MyCompany.AuthPlatform.Api --launch-profile https-remote-minikms
+```
+
+That starts the API in remote MiniKMS mode while keeping the API and key-management process split.
 
 ## Point the main API at the MiniKMS service
 
@@ -57,6 +76,39 @@ Update the main API config in [appsettings.json](/d:/Research/acmp/src/MyCompany
 ```
 
 When `Provider` is `RemoteMiniKms`, the API keeps using the same application-layer secret protection flow, but the underlying `IMiniKms` implementation becomes an HTTP client to the separate MiniKMS service.
+
+## Rotate the MiniKMS active key
+
+Create a new key version:
+
+```powershell
+$headers = @{ "X-MiniKms-Api-Key" = "dev-minikms-api-key" }
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri https://localhost:7190/internal/minikms/keys `
+  -Headers $headers `
+  -Body (@{ keyVersion = "kms-v2"; activate = $false } | ConvertTo-Json) `
+  -ContentType "application/json"
+```
+
+Activate it:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri https://localhost:7190/internal/minikms/keys/kms-v2/activate `
+  -Headers $headers
+```
+
+List known key versions:
+
+```powershell
+Invoke-RestMethod `
+  -Method Get `
+  -Uri https://localhost:7190/internal/minikms/keys `
+  -Headers $headers
+```
 
 ## Notes
 

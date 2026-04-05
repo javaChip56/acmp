@@ -152,8 +152,7 @@ builder.Services.AddSingleton<IMiniKms>(serviceProvider =>
         var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
         return new RemoteMiniKmsClient(
             httpClientFactory.CreateClient(RemoteMiniKmsClient.HttpClientName),
-            options.Remote.ApiKey,
-            options.ActiveKeyVersion);
+            options.Remote.ApiKey);
     }
 
     throw new InvalidOperationException(
@@ -206,12 +205,18 @@ app.UseAuthorization();
 
 var persistence = app.Services.GetRequiredService<IOptions<PersistenceOptions>>().Value;
 var miniKms = app.Services.GetRequiredService<IMiniKms>();
+var miniKmsConfiguration = app.Services.GetRequiredService<IOptions<MiniKmsOptions>>().Value;
 if (!string.Equals(persistence.Provider, PersistenceOptions.InMemoryDemoProvider, StringComparison.OrdinalIgnoreCase) &&
     !string.Equals(persistence.Provider, PersistenceOptions.SqlServerProvider, StringComparison.OrdinalIgnoreCase) &&
     !string.Equals(persistence.Provider, PersistenceOptions.PostgresProvider, StringComparison.OrdinalIgnoreCase))
 {
     throw new InvalidOperationException(
         $"Configured persistence provider '{persistence.Provider}' is not supported by the current host.");
+}
+
+if (string.Equals(miniKmsConfiguration.Provider, MiniKmsOptions.RemoteProvider, StringComparison.OrdinalIgnoreCase))
+{
+    _ = miniKms.ActiveKeyVersion;
 }
 
 if (string.Equals(persistence.Provider, PersistenceOptions.SqlServerProvider, StringComparison.OrdinalIgnoreCase))

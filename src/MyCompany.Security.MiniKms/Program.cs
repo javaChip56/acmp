@@ -12,7 +12,7 @@ builder.Services.Configure<MiniKmsServiceOptions>(
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddSingleton<IMasterKeyProvider>(serviceProvider =>
+builder.Services.AddSingleton<IRotatingMasterKeyProvider>(serviceProvider =>
 {
     var options = serviceProvider.GetRequiredService<IOptions<MiniKmsServiceOptions>>().Value;
     if (string.IsNullOrWhiteSpace(options.ServiceApiKey))
@@ -24,8 +24,10 @@ builder.Services.AddSingleton<IMasterKeyProvider>(serviceProvider =>
         pair => pair.Key,
         pair => Convert.FromBase64String(pair.Value),
         StringComparer.Ordinal);
-    return new ConfiguredMasterKeyProvider(keys, options.ActiveKeyVersion);
+    return new RotatingMasterKeyProvider(keys, options.ActiveKeyVersion);
 });
+builder.Services.AddSingleton<IMasterKeyProvider>(serviceProvider =>
+    serviceProvider.GetRequiredService<IRotatingMasterKeyProvider>());
 builder.Services.AddSingleton<IMiniKms, LocalMiniKms>();
 
 var app = builder.Build();
@@ -40,6 +42,7 @@ app.UseHttpsRedirection();
 
 var miniKms = app.Services.GetRequiredService<IMiniKms>();
 var options = app.Services.GetRequiredService<IOptions<MiniKmsServiceOptions>>().Value;
+var rotatingProvider = app.Services.GetRequiredService<IRotatingMasterKeyProvider>();
 
 app.MapGet("/health", () =>
 {
@@ -110,6 +113,66 @@ internalApi.MapPost("/decrypt", (DecryptSecretRequest request) =>
         miniKms.ProviderName));
 })
 .WithName("DecryptMiniKmsSecret")
+.WithOpenApi();
+
+internalApi.MapGet("/keys", () =>
+{
+    return TypedResults.Ok(rotatingProvider.ListKeyVersions());
+})
+.WithName("ListMiniKmsKeys")
+.WithOpenApi();
+
+internalApi.MapPost("/keys", (CreateKeyVersionRequest request) =>
+{
+    try
+    {
+        var keyMaterial = string.IsNullOrWhiteSpace(request.MasterKeyBase64)
+            ? null
+            : Convert.FromBase64String(request.MasterKeyBase64);
+        return TypedResults.Ok(rotatingProvider.AddKeyVersion(request.KeyVersion, keyMaterial, request.Activate));
+    }
+    catch (FormatException)
+    {
+        return Results.Json(
+            new { errorCode = "minikms_validation_error", message = "MasterKeyBase64 must be a valid base64 string when provided." },
+            statusCode: StatusCodes.Status400BadRequest);
+    }
+    catch (ArgumentException exception)
+    {
+        return Results.Json(
+            new { errorCode = "minikms_validation_error", message = exception.Message },
+            statusCode: StatusCodes.Status400BadRequest);
+    }
+    catch (InvalidOperationException exception)
+    {
+        return Results.Json(
+            new { errorCode = "minikms_conflict", message = exception.Message },
+            statusCode: StatusCodes.Status409Conflict);
+    }
+})
+.WithName("CreateMiniKmsKey")
+.WithOpenApi();
+
+internalApi.MapPost("/keys/{keyVersion}/activate", (string keyVersion) =>
+{
+    try
+    {
+        return TypedResults.Ok(rotatingProvider.ActivateKeyVersion(keyVersion));
+    }
+    catch (ArgumentException exception)
+    {
+        return Results.Json(
+            new { errorCode = "minikms_validation_error", message = exception.Message },
+            statusCode: StatusCodes.Status400BadRequest);
+    }
+    catch (InvalidOperationException exception)
+    {
+        return Results.Json(
+            new { errorCode = "minikms_not_found", message = exception.Message },
+            statusCode: StatusCodes.Status404NotFound);
+    }
+})
+.WithName("ActivateMiniKmsKey")
 .WithOpenApi();
 
 app.Run();

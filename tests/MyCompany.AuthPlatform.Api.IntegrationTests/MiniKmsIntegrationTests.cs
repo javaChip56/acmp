@@ -4,6 +4,9 @@ using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using MyCompany.AuthPlatform.Application;
 using MyCompany.AuthPlatform.Api;
 using MyCompany.Security.MiniKms;
 using MyCompany.Security.MiniKms.Client;
@@ -18,7 +21,7 @@ public sealed class MiniKmsIntegrationTests
     {
         using var factory = new MiniKmsFactory();
         using var httpClient = factory.CreateClient();
-        var remoteMiniKms = new RemoteMiniKmsClient(httpClient, "integration-test-api-key", "kms-v1");
+        var remoteMiniKms = new RemoteMiniKmsClient(httpClient, "integration-test-api-key");
 
         var secret = remoteMiniKms.GenerateRandomSecret();
         var encrypted = remoteMiniKms.Encrypt(secret);
@@ -54,6 +57,60 @@ public sealed class MiniKmsIntegrationTests
         Assert.Equal("kms-v1", health?["miniKmsKeyVersion"]?.GetValue<string>());
     }
 
+    [Fact]
+    public async Task MiniKmsService_CanCreateAndActivateNewKeyVersion()
+    {
+        using var factory = new MiniKmsFactory();
+        using var client = factory.CreateClient();
+
+        var createRequest = new HttpRequestMessage(HttpMethod.Post, "/internal/minikms/keys")
+        {
+            Content = JsonContent.Create(new CreateKeyVersionRequest("kms-v2", null, false))
+        };
+        createRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+
+        var createResponse = await client.SendAsync(createRequest);
+        createResponse.EnsureSuccessStatusCode();
+
+        var activateRequest = new HttpRequestMessage(HttpMethod.Post, "/internal/minikms/keys/kms-v2/activate");
+        activateRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+
+        var activateResponse = await client.SendAsync(activateRequest);
+        activateResponse.EnsureSuccessStatusCode();
+
+        var keysRequest = new HttpRequestMessage(HttpMethod.Get, "/internal/minikms/keys");
+        keysRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+
+        var keysResponse = await client.SendAsync(keysRequest);
+        keysResponse.EnsureSuccessStatusCode();
+        var keys = await keysResponse.Content.ReadFromJsonAsync<MiniKmsKeyVersionSummary[]>();
+        var health = await client.GetFromJsonAsync<MiniKmsHealthResponse>("/health");
+
+        Assert.NotNull(keys);
+        Assert.Contains(keys!, key => key.KeyVersion == "kms-v2" && key.IsActive);
+        Assert.Equal("kms-v2", health?.ActiveKeyVersion);
+    }
+
+    [Fact]
+    public async Task MainApi_ReflectsRotatedRemoteMiniKmsKeyVersion()
+    {
+        using var factory = new RemoteMiniKmsConfiguredApiFactory();
+
+        var rotateRequest = new HttpRequestMessage(HttpMethod.Post, "/internal/minikms/keys")
+        {
+            Content = JsonContent.Create(new CreateKeyVersionRequest("kms-v2", null, true))
+        };
+        rotateRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+        var rotateResponse = await factory.MiniKmsClient.SendAsync(rotateRequest);
+        rotateResponse.EnsureSuccessStatusCode();
+
+        using var client = factory.CreateClient();
+        var health = await client.GetFromJsonAsync<JsonObject>("/health");
+
+        Assert.Equal("RemoteMiniKms", health?["miniKmsProvider"]?.GetValue<string>());
+        Assert.Equal("kms-v2", health?["miniKmsKeyVersion"]?.GetValue<string>());
+    }
+
     private sealed class MiniKmsFactory : WebApplicationFactory<MiniKmsEntryPoint>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -73,6 +130,16 @@ public sealed class MiniKmsIntegrationTests
 
     private sealed class RemoteMiniKmsConfiguredApiFactory : WebApplicationFactory<ApiEntryPoint>
     {
+        private readonly MiniKmsFactory _miniKmsFactory = new();
+        private readonly HttpClient _miniKmsClient;
+
+        public RemoteMiniKmsConfiguredApiFactory()
+        {
+            _miniKmsClient = _miniKmsFactory.CreateClient();
+        }
+
+        public HttpClient MiniKmsClient => _miniKmsClient;
+
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Development");
@@ -90,6 +157,26 @@ public sealed class MiniKmsIntegrationTests
                     ["MiniKms:Remote:TimeoutSeconds"] = "15"
                 });
             });
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IMiniKms>();
+                services.RemoveAll<IHmacSecretProtector>();
+                services.AddSingleton<IMiniKms>(_ =>
+                    new RemoteMiniKmsClient(MiniKmsClient, "integration-test-api-key"));
+                services.AddSingleton<IHmacSecretProtector>(serviceProvider =>
+                    new MiniKmsHmacSecretProtector(serviceProvider.GetRequiredService<IMiniKms>()));
+            });
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _miniKmsClient.Dispose();
+                _miniKmsFactory.Dispose();
+            }
+
+            base.Dispose(disposing);
         }
     }
 }

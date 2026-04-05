@@ -11,20 +11,17 @@ public sealed class RemoteMiniKmsClient : IMiniKms
     private readonly HttpClient _httpClient;
     private readonly string _apiKey;
 
-    public RemoteMiniKmsClient(HttpClient httpClient, string apiKey, string activeKeyVersion)
+    public RemoteMiniKmsClient(HttpClient httpClient, string apiKey)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _apiKey = string.IsNullOrWhiteSpace(apiKey)
             ? throw new ArgumentException("A MiniKMS API key is required for the remote provider.", nameof(apiKey))
             : apiKey.Trim();
-        ActiveKeyVersion = string.IsNullOrWhiteSpace(activeKeyVersion)
-            ? throw new ArgumentException("An active MiniKMS key version is required for the remote provider.", nameof(activeKeyVersion))
-            : activeKeyVersion.Trim();
     }
 
     public string ProviderName => "RemoteMiniKms";
 
-    public string ActiveKeyVersion { get; }
+    public string ActiveKeyVersion => GetHealth().ActiveKeyVersion;
 
     public byte[] GenerateRandomSecret(int sizeInBytes = 32)
     {
@@ -58,7 +55,7 @@ public sealed class RemoteMiniKmsClient : IMiniKms
             "/internal/minikms/encrypt",
             JsonContent.Create(new EncryptSecretRequest(
                 Convert.ToBase64String(plaintext),
-                string.IsNullOrWhiteSpace(keyVersion) ? ActiveKeyVersion : keyVersion.Trim())));
+                string.IsNullOrWhiteSpace(keyVersion) ? null : keyVersion.Trim())));
         using var response = _httpClient.SendAsync(request).GetAwaiter().GetResult();
         response.EnsureSuccessStatusCode();
         var payload = response.Content.ReadFromJsonAsync<EncryptSecretResponse>().GetAwaiter().GetResult()
@@ -101,5 +98,14 @@ public sealed class RemoteMiniKmsClient : IMiniKms
         };
         request.Headers.TryAddWithoutValidation(ApiKeyHeaderName, _apiKey);
         return request;
+    }
+
+    private MiniKmsHealthResponse GetHealth()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/health");
+        using var response = _httpClient.SendAsync(request).GetAwaiter().GetResult();
+        response.EnsureSuccessStatusCode();
+        return response.Content.ReadFromJsonAsync<MiniKmsHealthResponse>().GetAwaiter().GetResult()
+            ?? throw new InvalidOperationException("MiniKMS did not return a health payload.");
     }
 }

@@ -29,6 +29,20 @@
         "ASPNETCORE_ENVIRONMENT": "Development"
       }
     },
+    "https-remote-minikms": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "launchUrl": "swagger",
+      "applicationUrl": "https://localhost:7140;http://localhost:5280",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "MiniKms__Provider": "RemoteMiniKms",
+        "MiniKms__Remote__BaseUrl": "https://localhost:7190",
+        "MiniKms__Remote__ApiKey": "dev-minikms-api-key",
+        "MiniKms__Remote__TimeoutSeconds": "15"
+      }
+    },
     "IIS Express": {
       "commandName": "IISExpress",
       "launchBrowser": true,
