@@ -915,6 +915,23 @@ When a credential is rotated:
 - the superseded package may continue to validate only as long as the old credential remains valid under the configured grace-period rules
 - after grace-period expiry or immediate revocation, the old package shall no longer be accepted even if the file remains present
 
+#### 10.4.8.A Future Automated Package Refresh Path
+The current design assumes that replacement package files are delivered to recipient services and client services by an external deployment or operational process.
+
+A future enhancement should allow automated package refresh so dependent runtimes can obtain updated package material with less manual operator involvement.
+
+Recommended future directions:
+
+- a pull-based recipient update path where the recipient host securely requests the latest eligible package for a configured binding or credential
+- an automated distribution workflow where ACMP publishes replacement packages to an approved delivery channel consumed by deployment/runtime agents
+
+Any future automated refresh design should preserve the current package security model, including:
+
+- package binding validation against the intended recipient protection context
+- integrity validation before promotion to active runtime state
+- auditability of package issuance and package retrieval or distribution events
+- fail-closed behavior when refresh or validation fails
+
 #### 10.4.9 Canonical Signing Profile Identifier
 The initial client package format should use `acmp-hmac-v1` as the canonical signing profile identifier.
 

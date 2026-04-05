@@ -264,6 +264,16 @@ The workflow shall include:
 ### FRS-3.4.18 Replacement Failure Behavior
 If a replacement package file is missing, unreadable, tampered, schema-incompatible, bound to the wrong protection context, or otherwise invalid, the DLL shall reject the new package and fail securely according to the package reload rules.
 
+### FRS-3.4.18.A Future Automated Package Refresh
+The architecture should support a future enhancement for automated package refresh so that recipient services and client services can update package files without requiring fully manual operator-side distribution for every credential refresh.
+
+This future enhancement may be implemented as:
+
+- a pull-based recipient update path in which the recipient securely requests or downloads the latest package material
+- an automated package distribution workflow coordinated by deployment or runtime agents
+
+The initial release does not require implementation of automated package refresh or pull-based package retrieval.
+
 ### FRS-3.4.19 Recipient Protection Binding Model
 The system shall model recipient protection bindings as first-class package-issuance inputs rather than only raw certificate thumbprint values.
 

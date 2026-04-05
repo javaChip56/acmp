@@ -236,3 +236,5 @@ The implemented platform is centered on HMAC and currently includes:
 - SQL Server, PostgreSQL, file-based, and in-memory persistence paths where applicable
 
 Future authentication modes such as OAuth, general JWT access-token platforms, and mTLS-focused authentication are intentionally outside the current release scope.
+
+Planned future enhancements also include automated package refresh or a pull-based recipient update path so client and recipient runtimes can adopt replacement credential packages with less manual distribution effort.
