@@ -37,9 +37,29 @@ builder.Services.AddSingleton<IMiniKmsStateStore>(serviceProvider =>
             StringComparer.Ordinal),
         []);
 
-    return options.DemoModeEnabled
-        ? new InMemoryMiniKmsStateStore(bootstrapSnapshot)
-        : new FileMiniKmsStateStore(options.StateFilePath, bootstrapSnapshot);
+    if (options.DemoModeEnabled)
+    {
+        return new InMemoryMiniKmsStateStore(bootstrapSnapshot);
+    }
+
+    if (string.Equals(options.PersistenceProvider, MiniKmsServiceOptions.FileProvider, StringComparison.OrdinalIgnoreCase))
+    {
+        return new FileMiniKmsStateStore(options.StateFilePath, bootstrapSnapshot);
+    }
+
+    if (string.Equals(options.PersistenceProvider, MiniKmsServiceOptions.SqlServerProvider, StringComparison.OrdinalIgnoreCase))
+    {
+        return new SqlServerMiniKmsStateStore(options.SqlServer.ConnectionString, bootstrapSnapshot);
+    }
+
+    if (string.Equals(options.PersistenceProvider, MiniKmsServiceOptions.PostgresProvider, StringComparison.OrdinalIgnoreCase))
+    {
+        return new PostgresMiniKmsStateStore(options.Postgres.ConnectionString, bootstrapSnapshot);
+    }
+
+    throw new InvalidOperationException(
+        $"MiniKms:PersistenceProvider '{options.PersistenceProvider}' is not supported. " +
+        $"Use '{MiniKmsServiceOptions.FileProvider}', '{MiniKmsServiceOptions.SqlServerProvider}', '{MiniKmsServiceOptions.PostgresProvider}', or enable demo mode.");
 });
 builder.Services.AddSingleton<IRotatingMasterKeyProvider, RotatingMasterKeyProvider>();
 builder.Services.AddSingleton<IMasterKeyProvider>(serviceProvider =>

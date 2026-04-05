@@ -21,9 +21,16 @@ The service uses the `MiniKms` config section in [appsettings.json](/d:/Research
 {
   "MiniKms": {
     "DemoModeEnabled": false,
+    "PersistenceProvider": "File",
     "ServiceApiKey": "dev-minikms-api-key",
     "ActiveKeyVersion": "kms-v1",
     "StateFilePath": "App_Data/minikms-state.json",
+    "SqlServer": {
+      "ConnectionString": "Server=(localdb)\\MSSQLLocalDB;Database=AcmpMiniKms;Trusted_Connection=True;TrustServerCertificate=True"
+    },
+    "Postgres": {
+      "ConnectionString": "Host=localhost;Port=5432;Database=acmp_minikms;Username=postgres;Password=postgres"
+    },
     "MasterKeys": {
       "kms-v1": "QWNtcFNlY3JldE1hc3RlcktleUZvckttc3YxIUFCQ0Q="
     }
@@ -46,7 +53,14 @@ Internal endpoints:
 The internal endpoints require the `X-MiniKms-Api-Key` header.
 They also accept an optional `X-MiniKms-Actor` header for audit attribution.
 
-By default, the MiniKMS service now persists its key-ring state and audit trail to the configured `StateFilePath`. If `DemoModeEnabled` is set to `true`, the service switches to in-memory state instead.
+The MiniKMS service supports these persistence modes:
+
+- `InMemoryDemo`
+- `File`
+- `SqlServer`
+- `Postgres`
+
+If `DemoModeEnabled` is `true`, the service always uses in-memory state regardless of the configured persistence provider. Otherwise it uses `PersistenceProvider`.
 
 ## Local split-process startup
 
@@ -69,6 +83,20 @@ If you want an ephemeral demo-only MiniKMS process, set:
 ```powershell
 $env:MiniKms__DemoModeEnabled = "true"
 dotnet run --project .\src\MyCompany.Security.MiniKms --launch-profile https
+```
+
+If you want SQL-backed MiniKMS persistence instead of file-backed state, set one of these:
+
+```powershell
+$env:MiniKms__PersistenceProvider = "SqlServer"
+$env:MiniKms__SqlServer__ConnectionString = "Server=(localdb)\MSSQLLocalDB;Database=AcmpMiniKms;Trusted_Connection=True;TrustServerCertificate=True"
+```
+
+or
+
+```powershell
+$env:MiniKms__PersistenceProvider = "Postgres"
+$env:MiniKms__Postgres__ConnectionString = "Host=localhost;Port=5432;Database=acmp_minikms;Username=postgres;Password=postgres"
 ```
 
 ## Point the main API at the MiniKMS service
@@ -150,6 +178,6 @@ Invoke-RestMethod `
 
 - `ActiveKeyVersion` remains explicit in the API config so the host can expose it in `/health` and use it as the default key version for new secrets.
 - `MasterKeys` are only used by the local provider path in the main API. In remote mode, the actual wrapping keys live in the MiniKMS service process.
-- In normal mode, MiniKMS persists key-ring state and audit history to `StateFilePath`. In demo mode, the same behavior stays available but is held only in memory for the lifetime of the process.
+- In normal mode, MiniKMS persists key-ring state and audit history through the configured provider. `File` is the default local option, while `SqlServer` and `Postgres` are the intended durable deployment targets.
 - MiniKMS key states are currently `Active`, `Available`, and `Retired`. Retired keys are decrypt-only.
 - Future implementations such as Windows Certificate Store or DPAPI-backed providers can still be added without changing the application-layer contracts.
