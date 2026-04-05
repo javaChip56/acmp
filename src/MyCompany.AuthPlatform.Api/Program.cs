@@ -93,7 +93,7 @@ else if (string.Equals(authProviderOptions.Mode, AuthenticationModes.JwtBearer, 
 else
 {
     throw new InvalidOperationException(
-        $"Authentication mode '{authProviderOptions.Mode}' is not supported. Use '{AuthenticationModes.DemoHeader}' or '{AuthenticationModes.JwtBearer}'.");
+        $"Authentication mode '{authProviderOptions.Mode}' is not supported. Use '{AuthenticationModes.DemoHeader}', '{AuthenticationModes.EmbeddedIdentity}', or '{AuthenticationModes.JwtBearer}'.");
 }
 
 builder.Services.AddAuthorization(options =>
@@ -199,6 +199,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseStaticFiles();
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
@@ -235,7 +236,10 @@ using (var scope = app.Services.CreateScope())
     await scope.ServiceProvider.GetRequiredService<DemoDataSeeder>().SeedAsync(app.Lifetime.ApplicationStopping);
 }
 
-app.MapGet("/", () => Results.Redirect("/swagger"))
+app.MapGet("/", () => Results.Redirect("/admin/index.html"))
+    .ExcludeFromDescription();
+
+app.MapGet("/admin", () => Results.Redirect("/admin/index.html"))
     .ExcludeFromDescription();
 
 app.MapGet("/health", (IOptions<PersistenceOptions> persistenceOptions) =>

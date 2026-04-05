@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ACMP Admin | Sign In</title>
+  <link rel="stylesheet" href="/admin/vendor/bootstrap-icons/font/bootstrap-icons.min.css" />
+  <link rel="stylesheet" href="/admin/vendor/adminlte/css/adminlte.min.css" />
+  <link rel="stylesheet" href="/admin/assets/admin.css" />
+</head>
+<body class="admin-login-page">
+  <div class="admin-login-wrap">
+    <section class="admin-login-panel">
+      <div class="admin-login-brand">
+        <img src="/admin/vendor/adminlte/img/AdminLTELogo.png" alt="ACMP logo" />
+        <span>ACMP Admin</span>
+      </div>
+
+      <div class="admin-login-badges">
+        <span class="badge text-bg-light">HMAC Credential Platform</span>
+        <span class="badge text-bg-primary">Embedded Identity</span>
+        <span class="badge text-bg-success">MiniKMS Ready</span>
+      </div>
+
+      <div class="mt-4">
+        <h1 class="display-6 fw-bold">Manage clients, credentials, packages, and admin access in one place.</h1>
+        <p class="mt-3 mb-0 text-white-50">
+          This portal is served directly from the ACMP API host and uses only locally hosted assets.
+        </p>
+      </div>
+
+      <div class="mt-4">
+        <h2 class="h5">What you can do here</h2>
+        <ul class="admin-list-tight">
+          <li>Review platform health, readiness, and persistence mode.</li>
+          <li>Create clients and issue or rotate HMAC credentials.</li>
+          <li>Download encrypted service and client packages.</li>
+          <li>Manage administrative users and audit trails.</li>
+        </ul>
+      </div>
+
+      <div class="mt-4">
+        <h2 class="h5">Runtime Notes</h2>
+        <ul id="system-notes" class="admin-list-tight text-white-50"></ul>
+      </div>
+    </section>
+
+    <section class="admin-login-card">
+      <div class="d-flex align-items-start justify-content-between gap-3">
+        <div>
+          <h2 class="h3 mb-1">Sign In</h2>
+          <p class="text-body-secondary mb-0">Authentication mode: <strong id="auth-mode-name">Loading...</strong></p>
+        </div>
+        <a href="/swagger" class="btn btn-outline-secondary btn-sm">Swagger</a>
+      </div>
+
+      <div class="mt-4 rounded-4 border bg-light p-3">
+        <div class="small text-uppercase text-body-secondary fw-semibold">Mode Guidance</div>
+        <div id="auth-mode-help" class="mt-2">Loading authentication configuration...</div>
+      </div>
+
+      <div id="login-message" class="alert alert-danger mt-3" hidden></div>
+
+      <div id="login-form-host" class="mt-4"></div>
+    </section>
+  </div>
+
+  <script type="module" src="/admin/assets/login.js"></script>
+</body>
+</html>

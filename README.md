@@ -5,6 +5,7 @@ ACMP is an internal authentication credential management platform focused on HMA
 It brings together:
 
 - an administration API for managing clients, credentials, packages, audit data, and admin users
+- a simple built-in web admin portal at `/admin`
 - reusable HMAC libraries for protected services and outbound clients
 - a MiniKMS service for protecting HMAC secrets and internal service-auth keys
 - multiple persistence options for demo, development, and durable deployment
@@ -58,7 +59,7 @@ The API can use MiniKMS in two ways:
 ### Runtime Hosts
 
 - `src/MyCompany.AuthPlatform.Api`
-  Runnable API host for administration, demo mode, embedded identity, credential issuance, rotation, revocation, audit access, and package delivery.
+  Runnable API host for the admin API, local web admin portal, demo mode, embedded identity, credential issuance, rotation, revocation, audit access, and package delivery.
 
 - `src/MyCompany.Security.MiniKms`
   Runnable internal MiniKMS host with key lifecycle, soft-retire behavior, audit logging, persisted state, service-auth key rotation, and readiness checks.
@@ -155,6 +156,11 @@ Run the main API host:
 ```powershell
 dotnet run --project .\src\MyCompany.AuthPlatform.Api
 ```
+
+Then open:
+
+- `<local-url>/admin/index.html` for the built-in web admin
+- `<local-url>/swagger` for the API surface in development
 
 Run the MiniKMS service:
 

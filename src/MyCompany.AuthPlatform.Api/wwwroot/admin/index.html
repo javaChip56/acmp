@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ACMP Admin</title>
+  <link rel="stylesheet" href="/admin/vendor/bootstrap-icons/font/bootstrap-icons.min.css" />
+  <link rel="stylesheet" href="/admin/vendor/adminlte/css/adminlte.min.css" />
+  <link rel="stylesheet" href="/admin/assets/admin.css" />
+</head>
+<body class="layout-fixed sidebar-expand-lg bg-body-tertiary admin-shell">
+  <div class="app-wrapper">
+    <nav class="app-header navbar navbar-expand bg-body">
+      <div class="container-fluid">
+        <ul class="navbar-nav">
+          <li class="nav-item">
+            <a id="menu-toggle" class="nav-link" href="#" role="button">
+              <i class="bi bi-list"></i>
+            </a>
+          </li>
+          <li class="nav-item d-none d-md-block">
+            <span class="nav-link fw-semibold">ACMP Web Admin</span>
+          </li>
+        </ul>
+
+        <ul class="navbar-nav ms-auto align-items-center gap-2">
+          <li class="nav-item"><span id="auth-mode-badge" class="badge text-bg-primary"></span></li>
+          <li class="nav-item"><span id="persistence-badge" class="badge text-bg-secondary"></span></li>
+          <li class="nav-item"><span id="role-badge" class="badge text-bg-success"></span></li>
+          <li class="nav-item"><span id="user-display" class="nav-link text-body-secondary"></span></li>
+          <li class="nav-item"><a href="/swagger" class="btn btn-outline-secondary btn-sm">Swagger</a></li>
+          <li class="nav-item"><button id="logout-button" type="button" class="btn btn-outline-danger btn-sm">Sign Out</button></li>
+        </ul>
+      </div>
+    </nav>
+
+    <aside class="app-sidebar shadow" data-bs-theme="dark">
+      <div class="sidebar-brand">
+        <a href="/admin/index.html" class="brand-link">
+          <img src="/admin/vendor/adminlte/img/AdminLTELogo.png" alt="ACMP logo" class="brand-image opacity-75 shadow" />
+          <span class="brand-text sidebar-brand-text">ACMP</span>
+        </a>
+      </div>
+
+      <div class="sidebar-wrapper">
+        <nav class="mt-3">
+          <ul class="nav sidebar-menu flex-column nav-sidebar">
+            <li class="nav-item">
+              <a href="#" class="nav-link active" data-section-target="dashboard">
+                <i class="nav-icon bi bi-speedometer2"></i>
+                <p>Dashboard</p>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a href="#" class="nav-link" data-section-target="clients">
+                <i class="nav-icon bi bi-diagram-3"></i>
+                <p>Clients & Credentials</p>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a href="#" class="nav-link" data-section-target="users">
+                <i class="nav-icon bi bi-people"></i>
+                <p>Admin Users</p>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a href="#" class="nav-link" data-section-target="audit">
+                <i class="nav-icon bi bi-journal-text"></i>
+                <p>Audit Log</p>
+              </a>
+            </li>
+          </ul>
+        </nav>
+      </div>
+    </aside>
+
+    <main class="app-main">
+      <div class="app-content-header">
+        <div class="container-fluid">
+          <div class="content-header-card">
+            <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+              <div>
+                <div class="text-uppercase small fw-semibold text-body-secondary">Administration</div>
+                <h1 id="section-title" class="mb-1">Dashboard</h1>
+                <div id="section-subtitle" class="text-body-secondary">Operational summary across API, persistence, and MiniKMS.</div>
+              </div>
+              <div class="admin-toolbar">
+                <button id="refresh-button" type="button" class="btn btn-primary">
+                  <i class="bi bi-arrow-clockwise me-1"></i> Refresh
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="app-content">
+        <div class="container-fluid pb-4">
+          <div id="alert-host" class="mb-3"></div>
+
+          <section class="admin-section" data-section="dashboard" data-title="Dashboard" data-subtitle="Operational summary across API, persistence, and MiniKMS.">
+            <div class="row g-3 mb-3">
+              <div class="col-sm-6 col-xl-3">
+                <div class="card metric-card">
+                  <div class="inner">
+                    <div class="d-flex justify-content-between">
+                      <div>
+                        <div class="text-uppercase small text-body-secondary fw-semibold">Health</div>
+                        <div id="health-status" class="display-6 fw-bold">-</div>
+                      </div>
+                      <div class="icon text-primary"><i class="bi bi-heart-pulse"></i></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="col-sm-6 col-xl-3">
+                <div class="card metric-card">
+                  <div class="inner">
+                    <div class="d-flex justify-content-between">
+                      <div>
+                        <div class="text-uppercase small text-body-secondary fw-semibold">Readiness</div>
+                        <div id="ready-status" class="display-6 fw-bold">-</div>
+                      </div>
+                      <div class="icon text-success"><i class="bi bi-shield-check"></i></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="col-sm-6 col-xl-2">
+                <div class="card metric-card">
+                  <div class="inner">
+                    <div class="text-uppercase small text-body-secondary fw-semibold">Clients</div>
+                    <div id="clients-count" class="display-6 fw-bold">0</div>
+                  </div>
+                </div>
+              </div>
+              <div class="col-sm-6 col-xl-2">
+                <div class="card metric-card">
+                  <div class="inner">
+                    <div class="text-uppercase small text-body-secondary fw-semibold">Admin Users</div>
+                    <div id="users-count" class="display-6 fw-bold">0</div>
+                  </div>
+                </div>
+              </div>
+              <div class="col-sm-6 col-xl-2">
+                <div class="card metric-card">
+                  <div class="inner">
+                    <div class="text-uppercase small text-body-secondary fw-semibold">Audit Entries</div>
+                    <div id="audit-count" class="display-6 fw-bold">0</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="row g-3">
+              <div class="col-lg-7">
+                <div class="card content-card">
+                  <div class="card-header">
+                    <h3 class="card-title fw-semibold">System Notes</h3>
+                  </div>
+                  <div class="card-body">
+                    <ul id="system-notes" class="admin-list-tight mb-0"></ul>
+                  </div>
+                </div>
+              </div>
+              <div class="col-lg-5">
+                <div class="card content-card">
+                  <div class="card-header">
+                    <h3 class="card-title fw-semibold">Readiness Checks</h3>
+                  </div>
+                  <div class="card-body">
+                    <ul id="readiness-list" class="list-group list-group-flush"></ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="admin-section" data-section="clients" data-title="Clients & Credentials" data-subtitle="Create service clients, issue credentials, and download encrypted packages." hidden>
+            <div class="row g-3">
+              <div class="col-xl-4">
+                <div class="card content-card">
+                  <div class="card-header">
+                    <h3 class="card-title fw-semibold">Create Client</h3>
+                  </div>
+                  <div class="card-body">
+                    <form id="create-client-form" class="admin-form-stack">
+                      <div>
+                        <label class="form-label">Client Code</label>
+                        <input name="clientCode" class="form-control" required />
+                      </div>
+                      <div>
+                        <label class="form-label">Client Name</label>
+                        <input name="clientName" class="form-control" required />
+                      </div>
+                      <div>
+                        <label class="form-label">Owner</label>
+                        <input name="owner" class="form-control" required />
+                      </div>
+                      <div>
+                        <label class="form-label">Environment</label>
+                        <select name="environment" class="form-select">
+                          <option value="Development">Development</option>
+                          <option value="Test">Test</option>
+                          <option value="Uat">Uat</option>
+                          <option value="Production">Production</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label class="form-label">Description</label>
+                        <textarea name="description" class="form-control" rows="3"></textarea>
+                      </div>
+                      <button type="submit" class="btn btn-primary">Create Client</button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-xl-8">
+                <div class="card content-card">
+                  <div class="card-header d-flex justify-content-between align-items-center">
+                    <h3 class="card-title fw-semibold">Clients</h3>
+                    <button id="client-refresh-button" type="button" class="btn btn-outline-secondary btn-sm">Refresh</button>
+                  </div>
+                  <div class="card-body table-responsive">
+                    <table class="table admin-table align-middle">
+                      <thead>
+                        <tr>
+                          <th>Code</th>
+                          <th>Name</th>
+                          <th>Owner</th>
+                          <th>Environment</th>
+                          <th>Status</th>
+                          <th>Updated</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody id="client-table-body"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="row g-3 mt-1">
+              <div class="col-xl-4">
+                <div class="card content-card">
+                  <div class="card-header">
+                    <h3 class="card-title fw-semibold">Issue HMAC Credential</h3>
+                  </div>
+                  <div class="card-body">
+                    <div class="admin-summary-pair mb-3">
+                      <strong id="client-detail-name">No client selected</strong>
+                      <span id="client-detail-meta">Choose a client from the list.</span>
+                    </div>
+                    <form id="issue-credential-form" class="admin-form-stack">
+                      <div>
+                        <label class="form-label">Expires At</label>
+                        <input name="expiresAt" type="datetime-local" class="form-control" required />
+                      </div>
+                      <div>
+                        <label class="form-label">Scopes</label>
+                        <input name="scopes" class="form-control" placeholder="orders.read, orders.write" />
+                      </div>
+                      <div>
+                        <label class="form-label">Notes</label>
+                        <input name="notes" class="form-control" />
+                      </div>
+                      <div>
+                        <label class="form-label">Key Id</label>
+                        <input name="keyId" class="form-control" />
+                      </div>
+                      <div>
+                        <label class="form-label">Key Version</label>
+                        <input name="keyVersion" class="form-control" placeholder="v1" />
+                      </div>
+                      <button type="submit" class="btn btn-primary">Issue Credential</button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-xl-8">
+                <div class="card content-card">
+                  <div class="card-header d-flex justify-content-between align-items-center">
+                    <h3 class="card-title fw-semibold">Credentials</h3>
+                    <button id="credential-refresh-button" type="button" class="btn btn-outline-secondary btn-sm">Refresh</button>
+                  </div>
+                  <div class="card-body table-responsive">
+                    <table class="table admin-table align-middle">
+                      <thead>
+                        <tr>
+                          <th>Key Id</th>
+                          <th>Version</th>
+                          <th>Status</th>
+                          <th>Scopes</th>
+                          <th>Expires</th>
+                          <th>Grace Ends</th>
+                          <th>Updated</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody id="credential-table-body"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="admin-section" data-section="users" data-title="Admin Users" data-subtitle="Manage embedded administrative identities and roles." hidden>
+            <div class="row g-3">
+              <div class="col-xl-4">
+                <div class="card content-card">
+                  <div class="card-header">
+                    <h3 class="card-title fw-semibold">Create Admin User</h3>
+                  </div>
+                  <div class="card-body">
+                    <form id="create-admin-user-form" class="admin-form-stack">
+                      <div>
+                        <label class="form-label">Username</label>
+                        <input name="username" class="form-control" required />
+                      </div>
+                      <div>
+                        <label class="form-label">Display Name</label>
+                        <input name="displayName" class="form-control" required />
+                      </div>
+                      <div>
+                        <label class="form-label">Password</label>
+                        <input name="password" type="password" class="form-control" required />
+                      </div>
+                      <div>
+                        <label class="form-label d-block">Roles</label>
+                        <div class="form-check">
+                          <input id="role-viewer" name="roles" type="checkbox" value="AccessViewer" class="form-check-input" />
+                          <label for="role-viewer" class="form-check-label">AccessViewer</label>
+                        </div>
+                        <div class="form-check">
+                          <input id="role-operator" name="roles" type="checkbox" value="AccessOperator" class="form-check-input" />
+                          <label for="role-operator" class="form-check-label">AccessOperator</label>
+                        </div>
+                        <div class="form-check">
+                          <input id="role-admin" name="roles" type="checkbox" value="AccessAdministrator" class="form-check-input" checked />
+                          <label for="role-admin" class="form-check-label">AccessAdministrator</label>
+                        </div>
+                      </div>
+                      <button type="submit" class="btn btn-primary">Create Admin User</button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-xl-8">
+                <div class="card content-card">
+                  <div class="card-header d-flex justify-content-between align-items-center">
+                    <h3 class="card-title fw-semibold">Administrative Users</h3>
+                    <button id="admin-user-refresh-button" type="button" class="btn btn-outline-secondary btn-sm">Refresh</button>
+                  </div>
+                  <div class="card-body table-responsive">
+                    <table class="table admin-table align-middle">
+                      <thead>
+                        <tr>
+                          <th>Username</th>
+                          <th>Display Name</th>
+                          <th>Roles</th>
+                          <th>Status</th>
+                          <th>Last Login</th>
+                          <th>Updated</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody id="admin-user-table-body"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="admin-section" data-section="audit" data-title="Audit Log" data-subtitle="Review operational and administrative actions recorded by the platform." hidden>
+            <div class="card content-card">
+              <div class="card-header d-flex justify-content-between align-items-center">
+                <h3 class="card-title fw-semibold">Audit Events</h3>
+                <button id="audit-refresh-button" type="button" class="btn btn-outline-secondary btn-sm">Refresh</button>
+              </div>
+              <div class="card-body table-responsive">
+                <table class="table admin-table align-middle">
+                  <thead>
+                    <tr>
+                      <th>Timestamp</th>
+                      <th>Actor</th>
+                      <th>Action</th>
+                      <th>Target</th>
+                      <th>Reason</th>
+                      <th>Metadata</th>
+                    </tr>
+                  </thead>
+                  <tbody id="audit-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script type="module" src="/admin/assets/app.js"></script>
+</body>
+</html>
