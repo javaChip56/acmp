@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.12" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="8.0.12" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
     <PackageReference Include="Npgsql" Version="8.0.5" />
@@ -25,6 +26,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\MyCompany.AuthPlatform.Api\MyCompany.AuthPlatform.Api.csproj" />
+    <ProjectReference Include="..\..\src\MyCompany.AuthPlatform.Hmac\MyCompany.AuthPlatform.Hmac.csproj" />
+    <ProjectReference Include="..\..\src\MyCompany.AuthPlatform.Hmac.Client\MyCompany.AuthPlatform.Hmac.Client.csproj" />
+    <ProjectReference Include="..\..\src\MyCompany.AuthPlatform.Packaging\MyCompany.AuthPlatform.Packaging.csproj" />
     <ProjectReference Include="..\..\src\MyCompany.Security.MiniKms\MyCompany.Security.MiniKms.csproj" />
     <ProjectReference Include="..\..\src\MyCompany.Security.MiniKms.Client\MyCompany.Security.MiniKms.Client.csproj" />
   </ItemGroup>
