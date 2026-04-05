@@ -64,6 +64,11 @@ The API can use MiniKMS in two ways:
 - `src/MyCompany.Security.MiniKms`
   Runnable internal MiniKMS host with key lifecycle, soft-retire behavior, audit logging, persisted state, service-auth key rotation, and readiness checks.
 
+### Samples
+
+- `samples/MyCompany.AuthPlatform.RecipientSample`
+  Minimal recipient API that reads encrypted-file HMAC validation settings from `appsettings.json`, supports `ExternalRsaPublicKey` PEM private-key runtime decryption, and validates inbound ACMP HMAC requests.
+
 ### Application and Shared Logic
 
 - `src/MyCompany.AuthPlatform.Application`
@@ -180,6 +185,12 @@ Run the MiniKMS service:
 dotnet run --project .\src\MyCompany.Security.MiniKms
 ```
 
+Run the sample recipient host:
+
+```powershell
+dotnet run --project .\samples\MyCompany.AuthPlatform.RecipientSample
+```
+
 ## Key Documentation
 
 - [auth_platform_requirements_baseline.md](d:/Research/acmp/docs/auth_platform_requirements_baseline.md)
@@ -208,6 +219,9 @@ dotnet run --project .\src\MyCompany.Security.MiniKms
 
 - [external_recipient_wrapping_key_design.md](d:/Research/acmp/docs/external_recipient_wrapping_key_design.md)
   Draft design for cross-platform recipient-owned package decryption keys that do not rely on X.509 certificate stores.
+
+- [README.md](d:/Research/acmp/samples/MyCompany.AuthPlatform.RecipientSample/README.md)
+  Sample recipient host setup and runtime notes.
 
 ## Current Scope
 

@@ -2,6 +2,8 @@
 
 This note shows how a recipient service or client host can load ACMP encrypted credential packages at runtime, including the `ExternalRsaPublicKey` binding that uses a local PEM private key instead of an X.509 certificate.
 
+For a runnable reference host, see [samples/MyCompany.AuthPlatform.RecipientSample/README.md](d:/Research/acmp/samples/MyCompany.AuthPlatform.RecipientSample/README.md#L1).
+
 ## What The Recipient Needs
 
 For `EncryptedFile` mode, the recipient host needs:

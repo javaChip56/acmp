@@ -58,6 +58,12 @@
               </a>
             </li>
             <li class="nav-item">
+              <a href="#" class="nav-link" data-section-target="bindings">
+                <i class="nav-icon bi bi-key"></i>
+                <p>Recipient Bindings</p>
+              </a>
+            </li>
+            <li class="nav-item">
               <a href="#" class="nav-link" data-section-target="users">
                 <i class="nav-icon bi bi-people"></i>
                 <p>Admin Users</p>
@@ -301,6 +307,113 @@
                         </tr>
                       </thead>
                       <tbody id="credential-table-body"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="admin-section" data-section="bindings" data-title="Recipient Bindings" data-subtitle="Manage stored package-decryption bindings for recipient services and clients." hidden>
+            <div class="row g-3">
+              <div class="col-xl-4">
+                <div class="card content-card">
+                  <div class="card-header">
+                    <h3 class="card-title fw-semibold">Create Recipient Binding</h3>
+                  </div>
+                  <div class="card-body">
+                    <form id="create-binding-form" class="admin-form-stack">
+                      <div>
+                        <label class="form-label">Client</label>
+                        <select id="binding-client-select" name="clientId" class="form-select" required>
+                          <option value="">Select a client</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label class="form-label">Binding Name</label>
+                        <input name="bindingName" class="form-control" required />
+                      </div>
+                      <div>
+                        <label class="form-label">Binding Type</label>
+                        <select id="binding-type-select" name="bindingType" class="form-select">
+                          <option value="ExternalRsaPublicKey">External RSA Public Key</option>
+                          <option value="X509StoreThumbprint">Windows Certificate Store</option>
+                          <option value="X509File">X.509 File</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label class="form-label">Algorithm</label>
+                        <input name="algorithm" class="form-control" value="RSA-3072" required />
+                      </div>
+
+                      <div data-binding-field="external-rsa">
+                        <label class="form-label">Public Key PEM</label>
+                        <textarea name="publicKeyPem" class="form-control" rows="6" placeholder="-----BEGIN PUBLIC KEY-----"></textarea>
+                      </div>
+                      <div data-binding-field="external-rsa">
+                        <label class="form-label">Binding Key Id</label>
+                        <input name="keyId" class="form-control" placeholder="orders-api-prod-rsa" />
+                      </div>
+                      <div data-binding-field="external-rsa">
+                        <label class="form-label">Binding Key Version</label>
+                        <input name="keyVersion" class="form-control" placeholder="2026q2" />
+                      </div>
+
+                      <div data-binding-field="x509-store" hidden>
+                        <label class="form-label">Certificate Thumbprint</label>
+                        <input name="certificateThumbprint" class="form-control" />
+                      </div>
+                      <div data-binding-field="x509-store" hidden>
+                        <label class="form-label">Store Location</label>
+                        <input name="storeLocation" class="form-control" value="CurrentUser" />
+                      </div>
+                      <div data-binding-field="x509-store" hidden>
+                        <label class="form-label">Store Name</label>
+                        <input name="storeName" class="form-control" value="My" />
+                      </div>
+
+                      <div data-binding-field="x509-file" hidden>
+                        <label class="form-label">Certificate Path</label>
+                        <input name="certificatePath" class="form-control" placeholder="/etc/acmp/recipient-cert.pem" />
+                      </div>
+                      <div data-binding-field="x509-file" hidden>
+                        <label class="form-label">Private Key Path Hint</label>
+                        <input name="privateKeyPathHint" class="form-control" placeholder="/etc/acmp/recipient-private-key.pem" />
+                      </div>
+
+                      <div>
+                        <label class="form-label">Notes</label>
+                        <textarea name="notes" class="form-control" rows="3"></textarea>
+                      </div>
+                      <button type="submit" class="btn btn-primary">Create Binding</button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-xl-8">
+                <div class="card content-card">
+                  <div class="card-header d-flex justify-content-between align-items-center">
+                    <div>
+                      <h3 class="card-title fw-semibold">Bindings</h3>
+                      <div id="binding-detail-meta" class="small text-body-secondary mt-1">Select a client to view stored bindings.</div>
+                    </div>
+                    <button id="binding-refresh-button" type="button" class="btn btn-outline-secondary btn-sm">Refresh</button>
+                  </div>
+                  <div class="card-body table-responsive">
+                    <table class="table admin-table align-middle">
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>Type</th>
+                          <th>Status</th>
+                          <th>Binding Key</th>
+                          <th>Fingerprint</th>
+                          <th>Updated</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody id="binding-table-body"></tbody>
                     </table>
                   </div>
                 </div>

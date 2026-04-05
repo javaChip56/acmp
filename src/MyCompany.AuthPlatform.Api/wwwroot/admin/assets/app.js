@@ -22,6 +22,7 @@ const state = {
   selectedClientId: null,
   selectedClientName: null,
   credentials: [],
+  recipientBindings: [],
   adminUsers: [],
   audit: [],
 };
@@ -57,8 +58,14 @@ const elements = {
   createAdminUserForm: document.getElementById("create-admin-user-form"),
   createClientCard: document.getElementById("create-client-card"),
   issueCredentialCard: document.getElementById("issue-credential-card"),
+  bindingClientSelect: document.getElementById("binding-client-select"),
+  bindingTypeSelect: document.getElementById("binding-type-select"),
+  createBindingForm: document.getElementById("create-binding-form"),
+  bindingDetailMeta: document.getElementById("binding-detail-meta"),
+  bindingTableBody: document.getElementById("binding-table-body"),
   usersNavItem: document.querySelector("[data-section-target='users']")?.closest(".nav-item"),
   auditNavItem: document.querySelector("[data-section-target='audit']")?.closest(".nav-item"),
+  bindingsNavItem: document.querySelector("[data-section-target='bindings']")?.closest(".nav-item"),
 };
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -86,6 +93,10 @@ function initializeStaticView() {
 
   if (!state.capabilities.canViewAudit && elements.auditNavItem) {
     elements.auditNavItem.hidden = true;
+  }
+
+  if (!state.capabilities.canManageBindings && elements.bindingsNavItem) {
+    elements.bindingsNavItem.hidden = true;
   }
 
   if (!state.capabilities.canManageClients && elements.createClientCard) {
@@ -221,6 +232,56 @@ function wireEvents() {
   });
 
   document.getElementById("client-refresh-button").addEventListener("click", () => loadClients(false));
+  elements.bindingTypeSelect.addEventListener("change", () => toggleBindingFieldGroups());
+  elements.bindingClientSelect.addEventListener("change", async event => {
+    const clientId = event.target.value;
+    if (!clientId) {
+      state.recipientBindings = [];
+      renderBindingTable();
+      return;
+    }
+
+    const client = state.clients.find(item => item.clientId === clientId);
+    if (!client) {
+      return;
+    }
+
+    await loadCredentials(client.clientId, client.clientName);
+    switchSection("bindings");
+  });
+  elements.createBindingForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (!state.capabilities.canManageBindings) {
+      showAlert("Your role cannot manage recipient bindings.", "warning");
+      return;
+    }
+
+    const formData = new FormData(elements.createBindingForm);
+    const clientId = String(formData.get("clientId") ?? "");
+    if (!clientId) {
+      showAlert("Select a client first.", "warning");
+      return;
+    }
+
+    const request = buildRecipientBindingRequest(formData);
+
+    await apiRequest(`/api/clients/${clientId}/recipient-bindings`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(request),
+    });
+
+    elements.createBindingForm.reset();
+    elements.bindingTypeSelect.value = "ExternalRsaPublicKey";
+    toggleBindingFieldGroups();
+    showAlert("Recipient binding created.", "success");
+
+    const client = state.clients.find(item => item.clientId === clientId);
+    await loadCredentials(clientId, client?.clientName ?? state.selectedClientName);
+    switchSection("bindings");
+  });
   document.getElementById("credential-refresh-button").addEventListener("click", () => {
     if (!state.selectedClientId) {
       showAlert("Select a client first.", "warning");
@@ -228,6 +289,14 @@ function wireEvents() {
     }
 
     return loadCredentials(state.selectedClientId, state.selectedClientName);
+  });
+  document.getElementById("binding-refresh-button").addEventListener("click", () => {
+    if (!state.selectedClientId) {
+      showAlert("Select a client first.", "warning");
+      return;
+    }
+
+    return loadRecipientBindings(state.selectedClientId, state.selectedClientName);
   });
   document.getElementById("admin-user-refresh-button").addEventListener("click", () => loadAdminUsers());
   document.getElementById("audit-refresh-button").addEventListener("click", () => loadAudit());
@@ -248,6 +317,7 @@ async function bootstrapPortal() {
   }
 
   switchSection("dashboard");
+  toggleBindingFieldGroups();
 }
 
 function renderSystemNotes(notes) {
@@ -275,14 +345,18 @@ async function loadOverview() {
 async function loadClients(selectFirst) {
   if (!state.capabilities.canViewClients) {
     state.clients = [];
+    state.recipientBindings = [];
     elements.clientsCount.textContent = "0";
     elements.clientTableBody.innerHTML = `<tr><td colspan="7" class="text-center text-body-secondary">Your role cannot view clients.</td></tr>`;
+    renderBindingClientOptions();
+    renderBindingTable();
     return;
   }
 
   state.clients = await apiRequest("/api/clients");
   elements.clientsCount.textContent = String(state.clients.length);
   renderClientTable();
+  renderBindingClientOptions();
 
   if ((selectFirst || state.selectedClientId === null) && state.clients.length > 0) {
     const firstClient = state.clients[0];
@@ -338,7 +412,37 @@ async function loadCredentials(clientId, clientName) {
   state.credentials = response.items ?? [];
   elements.clientDetailName.textContent = clientName ?? response.clientName ?? "Selected client";
   elements.clientDetailMeta.textContent = `${response.clientCode} | ${response.items.length} credential(s)`;
+  syncBindingClientSelection();
   renderCredentialTable();
+
+  if (state.capabilities.canManageBindings) {
+    await loadRecipientBindings(clientId, clientName ?? response.clientName);
+  }
+}
+
+function renderBindingClientOptions() {
+  if (!elements.bindingClientSelect) {
+    return;
+  }
+
+  const options = [
+    `<option value="">Select a client</option>`,
+    ...state.clients.map(client =>
+      `<option value="${escapeHtml(client.clientId)}">${escapeHtml(client.clientCode)} | ${escapeHtml(client.clientName)}</option>`)
+  ];
+
+  elements.bindingClientSelect.innerHTML = options.join("");
+  syncBindingClientSelection();
+}
+
+function syncBindingClientSelection() {
+  if (!elements.bindingClientSelect) {
+    return;
+  }
+
+  if (state.selectedClientId) {
+    elements.bindingClientSelect.value = state.selectedClientId;
+  }
 }
 
 function renderCredentialTable() {
@@ -449,66 +553,236 @@ async function issuePackage(credential, clientPackage) {
     return;
   }
 
-  const bindingChoice = prompt(
-    "Protection binding type: enter 'store' for Windows certificate store or 'file' for file-based X.509 binding",
-    "store");
-
-  if (!bindingChoice) {
-    return;
-  }
-
   const reason = prompt("Reason", clientPackage ? "Client package issuance" : "Service package issuance");
 
   const path = clientPackage
     ? `/api/credentials/${credential.credentialId}/issue-client-package`
     : `/api/credentials/${credential.credentialId}/issue-encrypted-package`;
 
-  const normalizedChoice = bindingChoice.trim().toLowerCase();
+  const hasStoredBindings = state.recipientBindings.some(binding => binding.status === "Active");
+  const bindingMode = prompt(
+    "Package binding mode: enter 'binding' to use a saved recipient binding or 'inline' for inline X.509 fallback",
+    hasStoredBindings ? "binding" : "inline");
+
+  if (!bindingMode) {
+    return;
+  }
+
+  const normalizedMode = bindingMode.trim().toLowerCase();
   let request;
 
-  if (normalizedChoice === "file") {
-    const certificatePath = prompt("Certificate file path on the recipient machine", "/etc/acmp/recipient-cert.pem");
-    if (!certificatePath) {
+  if (normalizedMode === "binding") {
+    const activeBindings = state.recipientBindings.filter(binding => binding.status === "Active");
+    if (activeBindings.length === 0) {
+      showAlert("No active recipient bindings are available for the selected client.", "warning");
       return;
     }
 
-    const privateKeyPath = prompt("Private key file path if separate (optional)", "");
-    const certificatePem = prompt("Public certificate PEM for issuance (optional if API host can read the certificate file)", "");
+    const bindingList = activeBindings
+      .map((binding, index) =>
+        `${index + 1}. ${binding.bindingName} | ${binding.bindingType} | ${binding.keyId ?? "n/a"} | ${binding.keyVersion ?? "n/a"}`)
+      .join("\n");
+    const selection = prompt(`Choose a saved binding by number:\n${bindingList}`, "1");
+    if (!selection) {
+      return;
+    }
+
+    const selectedIndex = Number.parseInt(selection, 10) - 1;
+    const selectedBinding = activeBindings[selectedIndex];
+    if (!selectedBinding) {
+      showAlert("Invalid recipient binding selection.", "warning");
+      return;
+    }
 
     request = {
-      bindingType: "X509File",
-      certificateThumbprint: null,
-      storeLocation: null,
-      storeName: null,
-      certificatePath,
-      privateKeyPath: privateKeyPath || null,
-      certificatePem: certificatePem || null,
+      recipientBindingId: selectedBinding.bindingId,
       reason: reason || null,
     };
   } else {
-    const certificateThumbprint = prompt("Certificate thumbprint", "");
-    if (!certificateThumbprint) {
+    const bindingChoice = prompt(
+      "Inline protection binding type: enter 'store' for Windows certificate store or 'file' for file-based X.509 binding",
+      "store");
+
+    if (!bindingChoice) {
       return;
     }
 
-    const storeLocation = prompt("Certificate store location", "CurrentUser");
-    const storeName = prompt("Certificate store name", "My");
+    const normalizedChoice = bindingChoice.trim().toLowerCase();
 
-    request = {
-      bindingType: "X509StoreThumbprint",
-      certificateThumbprint,
-      storeLocation: storeLocation || "CurrentUser",
-      storeName: storeName || "My",
-      certificatePath: null,
-      privateKeyPath: null,
-      certificatePem: null,
-      reason: reason || null,
-    };
+    if (normalizedChoice === "file") {
+      const certificatePath = prompt("Certificate file path on the recipient machine", "/etc/acmp/recipient-cert.pem");
+      if (!certificatePath) {
+        return;
+      }
+
+      const privateKeyPath = prompt("Private key file path if separate (optional)", "");
+      const certificatePem = prompt("Public certificate PEM for issuance (optional if API host can read the certificate file)", "");
+
+      request = {
+        bindingType: "X509File",
+        certificateThumbprint: null,
+        storeLocation: null,
+        storeName: null,
+        certificatePath,
+        privateKeyPath: privateKeyPath || null,
+        certificatePem: certificatePem || null,
+        reason: reason || null,
+      };
+    } else {
+      const certificateThumbprint = prompt("Certificate thumbprint", "");
+      if (!certificateThumbprint) {
+        return;
+      }
+
+      const storeLocation = prompt("Certificate store location", "CurrentUser");
+      const storeName = prompt("Certificate store name", "My");
+
+      request = {
+        bindingType: "X509StoreThumbprint",
+        certificateThumbprint,
+        storeLocation: storeLocation || "CurrentUser",
+        storeName: storeName || "My",
+        certificatePath: null,
+        privateKeyPath: null,
+        certificatePem: null,
+        reason: reason || null,
+      };
+    }
   }
 
   await downloadFromApi(path, request);
 
   showAlert(`${clientPackage ? "Client" : "Service"} package downloaded.`, "success");
+}
+
+async function loadRecipientBindings(clientId, clientName) {
+  if (!state.capabilities.canManageBindings) {
+    state.recipientBindings = [];
+    renderBindingTable();
+    return;
+  }
+
+  state.recipientBindings = await apiRequest(`/api/clients/${clientId}/recipient-bindings`);
+  elements.bindingDetailMeta.textContent = `${clientName ?? state.selectedClientName ?? "Selected client"} | ${state.recipientBindings.length} binding(s)`;
+  syncBindingClientSelection();
+  renderBindingTable();
+}
+
+function renderBindingTable() {
+  elements.bindingTableBody.innerHTML = "";
+
+  if (!state.capabilities.canManageBindings) {
+    elements.bindingTableBody.innerHTML = `<tr><td colspan="7" class="text-center text-body-secondary">Your role cannot manage recipient bindings.</td></tr>`;
+    return;
+  }
+
+  if (!state.selectedClientId) {
+    elements.bindingTableBody.innerHTML = `<tr><td colspan="7" class="text-center text-body-secondary">Select a client to view bindings.</td></tr>`;
+    return;
+  }
+
+  if (state.recipientBindings.length === 0) {
+    elements.bindingTableBody.innerHTML = `<tr><td colspan="7" class="text-center text-body-secondary">No recipient bindings found for the selected client.</td></tr>`;
+    return;
+  }
+
+  for (const binding of state.recipientBindings) {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${escapeHtml(binding.bindingName)}</td>
+      <td>${escapeHtml(formatEnum(binding.bindingType))}</td>
+      <td><span class="badge text-bg-light border">${escapeHtml(formatEnum(binding.status))}</span></td>
+      <td>${escapeHtml(binding.keyId ?? "n/a")}${binding.keyVersion ? `<div class="small text-body-secondary">${escapeHtml(binding.keyVersion)}</div>` : ""}</td>
+      <td><span class="admin-code">${escapeHtml(binding.publicKeyFingerprint ?? binding.certificateThumbprint ?? "n/a")}</span></td>
+      <td>${escapeHtml(formatDateTime(binding.updatedAt))}</td>
+      <td class="text-end">
+        <div class="btn-group btn-group-sm">
+          <button type="button" class="btn btn-outline-success" data-action="activate">Activate</button>
+          <button type="button" class="btn btn-outline-secondary" data-action="retire">Retire</button>
+        </div>
+      </td>
+    `;
+
+    row.querySelector("[data-action='activate']").addEventListener("click", () => updateBindingStatus(binding, true));
+    row.querySelector("[data-action='retire']").addEventListener("click", () => updateBindingStatus(binding, false));
+    elements.bindingTableBody.append(row);
+  }
+}
+
+async function updateBindingStatus(binding, activate) {
+  if (!state.capabilities.canManageBindings) {
+    showAlert("Your role cannot manage recipient bindings.", "warning");
+    return;
+  }
+
+  const reason = prompt("Reason", activate ? "Binding activated" : "Binding retired");
+  if (reason === null) {
+    return;
+  }
+
+  await apiRequest(`/api/recipient-bindings/${binding.bindingId}/${activate ? "activate" : "retire"}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      reason: reason || null,
+    }),
+  });
+
+  showAlert(`Recipient binding ${activate ? "activated" : "retired"}.`, "success");
+  await loadRecipientBindings(state.selectedClientId, state.selectedClientName);
+}
+
+function toggleBindingFieldGroups() {
+  const bindingType = elements.bindingTypeSelect?.value ?? "ExternalRsaPublicKey";
+  const fields = [...document.querySelectorAll("[data-binding-field]")];
+
+  for (const field of fields) {
+    const key = field.getAttribute("data-binding-field");
+    const isVisible =
+      (bindingType === "ExternalRsaPublicKey" && key === "external-rsa") ||
+      (bindingType === "X509StoreThumbprint" && key === "x509-store") ||
+      (bindingType === "X509File" && key === "x509-file");
+
+    field.hidden = !isVisible;
+  }
+}
+
+function buildRecipientBindingRequest(formData) {
+  const bindingType = String(formData.get("bindingType") ?? "");
+  const request = {
+    bindingName: String(formData.get("bindingName") ?? ""),
+    bindingType,
+    algorithm: String(formData.get("algorithm") ?? ""),
+    publicKeyPem: null,
+    certificateThumbprint: null,
+    storeLocation: null,
+    storeName: null,
+    certificatePath: null,
+    privateKeyPathHint: null,
+    keyId: null,
+    keyVersion: null,
+    notes: String(formData.get("notes") ?? "") || null,
+  };
+
+  if (bindingType === "ExternalRsaPublicKey") {
+    request.publicKeyPem = String(formData.get("publicKeyPem") ?? "") || null;
+    request.keyId = String(formData.get("keyId") ?? "") || null;
+    request.keyVersion = String(formData.get("keyVersion") ?? "") || null;
+    return request;
+  }
+
+  if (bindingType === "X509StoreThumbprint") {
+    request.certificateThumbprint = String(formData.get("certificateThumbprint") ?? "") || null;
+    request.storeLocation = String(formData.get("storeLocation") ?? "") || null;
+    request.storeName = String(formData.get("storeName") ?? "") || null;
+    return request;
+  }
+
+  request.certificatePath = String(formData.get("certificatePath") ?? "") || null;
+  request.privateKeyPathHint = String(formData.get("privateKeyPathHint") ?? "") || null;
+  return request;
 }
 
 async function loadAdminUsers() {
@@ -725,6 +999,23 @@ async function refreshCurrentSection() {
   if (section === "clients") {
     await loadClients(false);
     showAlert("Clients refreshed.", "success");
+    return;
+  }
+
+  if (section === "bindings") {
+    if (!state.capabilities.canManageBindings) {
+      showAlert("Your role cannot open Recipient Bindings.", "warning");
+      switchSection("dashboard");
+      return;
+    }
+
+    if (!state.selectedClientId) {
+      await loadClients(true);
+    } else {
+      await loadRecipientBindings(state.selectedClientId, state.selectedClientName);
+    }
+
+    showAlert("Recipient bindings refreshed.", "success");
     return;
   }
 

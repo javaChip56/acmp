@@ -82,6 +82,7 @@ export function getRoleCapabilities(session) {
     canViewClients: isViewer,
     canManageClients: isOperator,
     canManageCredentials: isOperator,
+    canManageBindings: isOperator,
     canManageAdminUsers: isAdministrator,
     canViewAudit: isAdministrator,
   };
