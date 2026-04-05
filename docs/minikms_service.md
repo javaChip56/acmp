@@ -52,6 +52,7 @@ The service uses the `MiniKms` config section in [appsettings.json](/d:/Research
 Internal endpoints:
 
 - `GET /health`
+- `GET /ready`
 - `POST /internal/minikms/generate-secret`
 - `POST /internal/minikms/encrypt`
 - `POST /internal/minikms/decrypt`
@@ -67,6 +68,9 @@ Internal endpoints:
 
 The internal endpoints require a signed bearer token issued for the internal MiniKMS audience.
 Actor attribution is taken from the token subject.
+
+`GET /health` is a lightweight liveness check.
+`GET /ready` performs readiness validation for the MiniKMS state store, active HMAC key ring, and active service-auth JWT key ring, and returns `503` if the service is not ready.
 
 The MiniKMS service supports these persistence modes:
 

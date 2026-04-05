@@ -59,6 +59,32 @@ public sealed class MiniKmsIntegrationTests
     }
 
     [Fact]
+    public async Task MiniKmsService_ReadinessEndpointReportsReady()
+    {
+        using var factory = new MiniKmsFactory();
+        using var client = factory.CreateClient();
+
+        var readiness = await client.GetFromJsonAsync<MiniKmsReadinessResponse>("/ready");
+
+        Assert.Equal("Ready", readiness?.Status);
+        Assert.NotNull(readiness?.Checks);
+        Assert.All(readiness!.Checks, check => Assert.Equal("Ready", check.Status));
+    }
+
+    [Fact]
+    public async Task MainApi_ReadinessEndpointReportsReady()
+    {
+        using var factory = new RemoteMiniKmsConfiguredApiFactory();
+        using var client = factory.CreateClient();
+
+        var readiness = await client.GetFromJsonAsync<ReadinessResponse>("/ready");
+
+        Assert.Equal("Ready", readiness?.Status);
+        Assert.NotNull(readiness?.Checks);
+        Assert.All(readiness!.Checks, check => Assert.Equal("Ready", check.Status));
+    }
+
+    [Fact]
     public async Task MiniKmsService_CanCreateAndActivateNewKeyVersion()
     {
         using var factory = new MiniKmsFactory();

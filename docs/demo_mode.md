@@ -29,6 +29,7 @@ The current default configuration uses:
 ## Useful Endpoints
 
 - `GET /health`
+- `GET /ready`
 - `POST /api/auth/token`
 - `GET /api/system/info`
 - `GET /api/admin/users`
@@ -70,4 +71,5 @@ You can still supply `X-Correlation-Id` on API requests when you want to control
 - This is a demo host, not the full production host.
 - The in-memory provider is intended for demonstrations only.
 - The embedded identity provider is intended as an application-local identity source, with bootstrap users seeded into the persisted store for local and demo use.
+- `GET /health` is a lightweight liveness endpoint, while `GET /ready` verifies persistence and MiniKMS readiness and returns `503` when the host is not ready to serve requests.
 - To switch the same host to a real identity provider, set `Authentication:Mode = JwtBearer` and configure the `Authentication:JwtBearer` section described in [identity_provider_setup.md](d:/Research/acmp/docs/identity_provider_setup.md).

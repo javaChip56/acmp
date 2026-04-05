@@ -38,6 +38,18 @@ public sealed record MiniKmsHealthResponse(
     string ProviderName,
     string ActiveKeyVersion);
 
+public sealed record MiniKmsReadinessCheck(
+    string Name,
+    string Status,
+    string Details);
+
+public sealed record MiniKmsReadinessResponse(
+    string Status,
+    string ProviderName,
+    string ActiveKeyVersion,
+    string ServiceAuthActiveKeyVersion,
+    IReadOnlyList<MiniKmsReadinessCheck> Checks);
+
 public sealed record MiniKmsKeyVersionSummary(
     string KeyVersion,
     string Status,

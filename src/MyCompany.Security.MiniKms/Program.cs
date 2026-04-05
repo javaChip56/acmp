@@ -174,6 +174,8 @@ var rotatingProvider = app.Services.GetRequiredService<IRotatingMasterKeyProvide
 var auditLog = app.Services.GetRequiredService<IMiniKmsAuditLog>();
 var serviceTokenKeyProvider = app.Services.GetService<IRotatingInternalJwtKeyProvider>();
 
+EnsureMiniKmsReady(app.Services, miniKms, serviceTokenKeyProvider);
+
 app.MapGet("/health", () =>
 {
     return TypedResults.Ok(new MiniKmsHealthResponse(
@@ -182,6 +184,16 @@ app.MapGet("/health", () =>
         miniKms.ActiveKeyVersion));
 })
 .WithName("GetMiniKmsHealth")
+.WithOpenApi();
+
+app.MapGet("/ready", () =>
+{
+    var readiness = EvaluateMiniKmsReadiness(app.Services, miniKms, serviceTokenKeyProvider);
+    return readiness.Status == "Ready"
+        ? Results.Ok(readiness)
+        : Results.Json(readiness, statusCode: StatusCodes.Status503ServiceUnavailable);
+})
+.WithName("GetMiniKmsReady")
 .WithOpenApi();
 
 var internalApi = app.MapGroup("/internal/minikms");
@@ -538,6 +550,128 @@ static byte[]? TryResolveBootstrapSigningKey(MiniKmsInternalJwtOptions options)
     catch (FormatException)
     {
         return Encoding.UTF8.GetBytes(options.SigningKey);
+    }
+}
+
+static MiniKmsReadinessResponse EvaluateMiniKmsReadiness(
+    IServiceProvider services,
+    IMiniKms miniKms,
+    IRotatingInternalJwtKeyProvider? serviceTokenKeyProvider)
+{
+    var checks = new List<MiniKmsReadinessCheck>();
+
+    try
+    {
+        var stateStore = services.GetRequiredService<IMiniKmsStateStore>();
+        _ = stateStore.Load();
+        checks.Add(new MiniKmsReadinessCheck(
+            "StateStore",
+            "Ready",
+            $"MiniKMS state store '{stateStore.ProviderName}' is reachable."));
+    }
+    catch (Exception exception)
+    {
+        checks.Add(new MiniKmsReadinessCheck(
+            "StateStore",
+            "Failed",
+            exception.Message));
+    }
+
+    try
+    {
+        var activeKeyVersion = miniKms.ActiveKeyVersion;
+        var knownKeys = services.GetRequiredService<IRotatingMasterKeyProvider>().ListKeyVersions();
+        if (string.IsNullOrWhiteSpace(activeKeyVersion))
+        {
+            throw new InvalidOperationException("MiniKMS did not report an active HMAC key version.");
+        }
+
+        if (!knownKeys.Any(key => key.IsActive && string.Equals(key.KeyVersion, activeKeyVersion, StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException($"Active HMAC key version '{activeKeyVersion}' is not present in the MiniKMS key ring.");
+        }
+
+        checks.Add(new MiniKmsReadinessCheck(
+            "HmacKeyRing",
+            "Ready",
+            $"Active HMAC key version '{activeKeyVersion}' is available."));
+    }
+    catch (Exception exception)
+    {
+        checks.Add(new MiniKmsReadinessCheck(
+            "HmacKeyRing",
+            "Failed",
+            exception.Message));
+    }
+
+    try
+    {
+        if (serviceTokenKeyProvider is null)
+        {
+            throw new InvalidOperationException("MiniKMS internal JWT key provider is unavailable.");
+        }
+
+        var activeServiceAuthKeyVersion = serviceTokenKeyProvider.GetActiveKeyVersion();
+        _ = serviceTokenKeyProvider.GetSigningKey(activeServiceAuthKeyVersion);
+        checks.Add(new MiniKmsReadinessCheck(
+            "ServiceAuthKeyRing",
+            "Ready",
+            $"Active service-auth key version '{activeServiceAuthKeyVersion}' is available."));
+    }
+    catch (Exception exception)
+    {
+        checks.Add(new MiniKmsReadinessCheck(
+            "ServiceAuthKeyRing",
+            "Failed",
+            exception.Message));
+    }
+
+    var status = checks.All(check => string.Equals(check.Status, "Ready", StringComparison.Ordinal))
+        ? "Ready"
+        : "NotReady";
+
+    return new MiniKmsReadinessResponse(
+        status,
+        $"{miniKms.ProviderName}/{services.GetRequiredService<IMiniKmsStateStore>().ProviderName}",
+        SafeResolveMiniKmsKeyVersion(miniKms),
+        SafeResolveServiceAuthKeyVersion(serviceTokenKeyProvider),
+        checks);
+}
+
+static void EnsureMiniKmsReady(
+    IServiceProvider services,
+    IMiniKms miniKms,
+    IRotatingInternalJwtKeyProvider? serviceTokenKeyProvider)
+{
+    var readiness = EvaluateMiniKmsReadiness(services, miniKms, serviceTokenKeyProvider);
+    if (!string.Equals(readiness.Status, "Ready", StringComparison.Ordinal))
+    {
+        var details = string.Join("; ", readiness.Checks.Select(check => $"{check.Name}: {check.Details}"));
+        throw new InvalidOperationException($"MiniKMS readiness validation failed. {details}");
+    }
+}
+
+static string SafeResolveMiniKmsKeyVersion(IMiniKms miniKms)
+{
+    try
+    {
+        return miniKms.ActiveKeyVersion;
+    }
+    catch
+    {
+        return "Unavailable";
+    }
+}
+
+static string SafeResolveServiceAuthKeyVersion(IRotatingInternalJwtKeyProvider? provider)
+{
+    try
+    {
+        return provider?.GetActiveKeyVersion() ?? "Unavailable";
+    }
+    catch
+    {
+        return "Unavailable";
     }
 }
 

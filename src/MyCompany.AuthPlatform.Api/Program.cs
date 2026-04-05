@@ -219,6 +219,8 @@ if (string.Equals(miniKmsConfiguration.Provider, MiniKmsOptions.RemoteProvider, 
     _ = miniKms.ActiveKeyVersion;
 }
 
+await EnsureApiReadyAsync(app.Services, miniKms, miniKmsConfiguration, persistence);
+
 if (string.Equals(persistence.Provider, PersistenceOptions.SqlServerProvider, StringComparison.OrdinalIgnoreCase))
 {
     await app.Services.ApplyAuthPlatformSqlServerMigrationsAsync();
@@ -245,6 +247,16 @@ app.MapGet("/health", (IOptions<PersistenceOptions> persistenceOptions) =>
         miniKms.ActiveKeyVersion));
 })
 .WithName("GetHealth")
+.WithOpenApi();
+
+app.MapGet("/ready", async () =>
+{
+    var readiness = await EvaluateApiReadinessAsync(app.Services, miniKms, miniKmsConfiguration, persistence);
+    return readiness.Status == "Ready"
+        ? Results.Ok(readiness)
+        : Results.Json(readiness, statusCode: StatusCodes.Status503ServiceUnavailable);
+})
+.WithName("GetReady")
 .WithOpenApi();
 
 if (string.Equals(authProviderOptions.Mode, AuthenticationModes.EmbeddedIdentity, StringComparison.OrdinalIgnoreCase))
@@ -650,6 +662,118 @@ static void ConfigureBearerErrorResponses(JwtBearerOptions options, string chall
                 "The authenticated identity is not permitted to perform this action."));
         },
     };
+}
+
+static async Task<ReadinessResponse> EvaluateApiReadinessAsync(
+    IServiceProvider services,
+    IMiniKms miniKms,
+    MiniKmsOptions miniKmsOptions,
+    PersistenceOptions persistenceOptions)
+{
+    var checks = new List<ReadinessCheckResponse>();
+
+    try
+    {
+        using var scope = services.CreateScope();
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IAuthPlatformUnitOfWork>();
+        await unitOfWork.ServiceClients.ListAsync(new ListServiceClientsRequest { Skip = 0, Take = 1 });
+        checks.Add(new ReadinessCheckResponse(
+            "Persistence",
+            "Ready",
+            $"Provider '{persistenceOptions.Provider}' is reachable."));
+    }
+    catch (Exception exception)
+    {
+        checks.Add(new ReadinessCheckResponse(
+            "Persistence",
+            "Failed",
+            exception.Message));
+    }
+
+    try
+    {
+        var activeKeyVersion = miniKms.ActiveKeyVersion;
+        if (string.IsNullOrWhiteSpace(activeKeyVersion))
+        {
+            throw new InvalidOperationException("MiniKMS did not report an active key version.");
+        }
+
+        checks.Add(new ReadinessCheckResponse(
+            "MiniKms",
+            "Ready",
+            $"Provider '{miniKms.ProviderName}' reported active key version '{activeKeyVersion}'."));
+    }
+    catch (Exception exception)
+    {
+        checks.Add(new ReadinessCheckResponse(
+            "MiniKms",
+            "Failed",
+            exception.Message));
+    }
+
+    if (string.Equals(miniKmsOptions.Provider, MiniKmsOptions.RemoteProvider, StringComparison.OrdinalIgnoreCase))
+    {
+        try
+        {
+            var tokenProvider = new MiniKmsInternalJwtTokenProvider(miniKmsOptions.Remote.InternalJwt);
+            _ = tokenProvider.GetAccessToken();
+            checks.Add(new ReadinessCheckResponse(
+                "MiniKmsServiceAuth",
+                "Ready",
+                $"Remote MiniKMS internal JWT token generation succeeded for subject '{tokenProvider.Actor}'."));
+        }
+        catch (Exception exception)
+        {
+            checks.Add(new ReadinessCheckResponse(
+                "MiniKmsServiceAuth",
+                "Failed",
+                exception.Message));
+        }
+    }
+    else
+    {
+        checks.Add(new ReadinessCheckResponse(
+            "MiniKmsServiceAuth",
+            "Ready",
+            "Local MiniKMS mode does not require remote service-auth token generation."));
+    }
+
+    var status = checks.All(check => string.Equals(check.Status, "Ready", StringComparison.Ordinal))
+        ? "Ready"
+        : "NotReady";
+
+    return new ReadinessResponse(
+        status,
+        checks,
+        persistenceOptions.Provider,
+        miniKms.ProviderName,
+        SafeResolveMiniKmsKeyVersion(miniKms));
+}
+
+static async Task EnsureApiReadyAsync(
+    IServiceProvider services,
+    IMiniKms miniKms,
+    MiniKmsOptions miniKmsOptions,
+    PersistenceOptions persistenceOptions)
+{
+    var readiness = await EvaluateApiReadinessAsync(services, miniKms, miniKmsOptions, persistenceOptions);
+    if (!string.Equals(readiness.Status, "Ready", StringComparison.Ordinal))
+    {
+        var details = string.Join("; ", readiness.Checks.Select(check => $"{check.Name}: {check.Details}"));
+        throw new InvalidOperationException($"API readiness validation failed. {details}");
+    }
+}
+
+static string SafeResolveMiniKmsKeyVersion(IMiniKms miniKms)
+{
+    try
+    {
+        return miniKms.ActiveKeyVersion;
+    }
+    catch
+    {
+        return "Unavailable";
+    }
 }
 
 public partial class Program

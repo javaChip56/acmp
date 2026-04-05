@@ -6,6 +6,18 @@ public sealed record HealthResponse(
     string MiniKmsProvider,
     string MiniKmsKeyVersion);
 
+public sealed record ReadinessCheckResponse(
+    string Name,
+    string Status,
+    string Details);
+
+public sealed record ReadinessResponse(
+    string Status,
+    IReadOnlyList<ReadinessCheckResponse> Checks,
+    string PersistenceProvider,
+    string MiniKmsProvider,
+    string MiniKmsKeyVersion);
+
 public sealed record DemoSystemInfoResponse(
     string AppName,
     string Mode,
