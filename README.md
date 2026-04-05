@@ -160,7 +160,19 @@ dotnet run --project .\src\MyCompany.AuthPlatform.Api
 Then open:
 
 - `<local-url>/admin/index.html` for the built-in web admin
+- `<local-url>/admin/login.html` for the admin sign-in page
 - `<local-url>/swagger` for the API surface in development
+
+Typical local URLs will look like:
+
+- `https://localhost:7xxx/admin/login.html`
+- `http://localhost:5xxx/admin/login.html`
+
+Default development sign-ins from [appsettings.Development.json](d:/Research/acmp/src/MyCompany.AuthPlatform.Api/appsettings.Development.json#L1):
+
+- `administrator.demo` / `AdministratorPass!123`
+- `operator.demo` / `OperatorPass!123`
+- `viewer.demo` / `ViewerPass!123`
 
 Run the MiniKMS service:
 

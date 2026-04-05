@@ -17,6 +17,17 @@ The current default configuration uses:
 - `DemoMode:SeedOnStartup = true`
 - `Authentication:Mode = EmbeddedIdentity`
 
+After startup, open the local URL printed by ASP.NET Core and go to:
+
+- `/admin/login.html` to use the built-in web admin
+- `/admin/index.html` if you already have a valid session
+- `/swagger` to inspect and invoke the API directly
+
+Typical development URLs will look like:
+
+- `https://localhost:7xxx/admin/login.html`
+- `http://localhost:5xxx/admin/login.html`
+
 ## What Demo Mode Does
 
 - starts the API with the in-memory persistence provider
@@ -53,6 +64,8 @@ The current default configuration uses:
 - `viewer.demo / ViewerPass!123`
 - `operator.demo / OperatorPass!123`
 - `administrator.demo / AdministratorPass!123`
+
+For the web admin UI, sign in on `/admin/login.html` with one of the accounts above.
 
 Those users are bootstrapped into the local persisted admin-user store on startup when they do not already exist.
 
