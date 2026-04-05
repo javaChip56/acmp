@@ -165,13 +165,15 @@ public sealed class EncryptedFileHmacRuntimeTests
         var publicKeyPem = rsa.ExportSubjectPublicKeyInfoPem();
         var publicKeyFingerprint = ComputePublicKeyFingerprint(rsa);
         var privateKeyPath = await WritePrivateKeyPemAsync(tempDirectory.Path, rsa);
-        var packageReadOptions = new HmacCredentialPackageReadOptions(
-            ExpectedBindingId: bindingId,
-            ExpectedBindingType: RecipientProtectionBindingTypes.ExternalRsaPublicKey,
-            ExpectedBindingKeyId: bindingKeyId,
-            ExpectedBindingKeyVersion: bindingKeyVersion,
-            ExpectedPublicKeyFingerprint: publicKeyFingerprint,
-            ExternalRsaPrivateKeyPath: privateKeyPath);
+        var packageReadOptions = new HmacCredentialPackageReadOptions
+        {
+            ExpectedBindingId = bindingId,
+            ExpectedBindingType = RecipientProtectionBindingTypes.ExternalRsaPublicKey,
+            ExpectedBindingKeyId = bindingKeyId,
+            ExpectedBindingKeyVersion = bindingKeyVersion,
+            ExpectedPublicKeyFingerprint = publicKeyFingerprint,
+            ExternalRsaPrivateKeyPath = privateKeyPath
+        };
 
         await WritePackageAsync(
             protector,
@@ -277,13 +279,15 @@ public sealed class EncryptedFileHmacRuntimeTests
             {
                 PackageDirectory = tempDirectory.Path,
                 CacheTimeToLive = TimeSpan.FromMinutes(5),
-                PackageReadOptions = new HmacCredentialPackageReadOptions(
-                    ExpectedBindingId: Guid.NewGuid(),
-                    ExpectedBindingType: RecipientProtectionBindingTypes.ExternalRsaPublicKey,
-                    ExpectedBindingKeyId: "orders-api-prod-rsa",
-                    ExpectedBindingKeyVersion: "2026q2",
-                    ExpectedPublicKeyFingerprint: publicKeyFingerprint,
-                    ExternalRsaPrivateKeyPath: privateKeyPath)
+                PackageReadOptions = new HmacCredentialPackageReadOptions
+                {
+                    ExpectedBindingId = Guid.NewGuid(),
+                    ExpectedBindingType = RecipientProtectionBindingTypes.ExternalRsaPublicKey,
+                    ExpectedBindingKeyId = "orders-api-prod-rsa",
+                    ExpectedBindingKeyVersion = "2026q2",
+                    ExpectedPublicKeyFingerprint = publicKeyFingerprint,
+                    ExternalRsaPrivateKeyPath = privateKeyPath
+                }
             },
             reader);
 

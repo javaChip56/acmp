@@ -2,9 +2,9 @@
 
 ## Status
 
-This document is a design draft for a future ACMP extension.
+This document describes the cross-platform recipient protection direction that ACMP now supports in its first implemented form.
 
-It is not the same as the currently implemented `X509StoreThumbprint` and `X509File` package binding modes. It proposes a more general, cross-platform-friendly recipient protection model that does not require the recipient to use an X.509 certificate store.
+The initial `ExternalRsaPublicKey` variant is implemented alongside the existing `X509StoreThumbprint` and `X509File` package binding modes. Future binding types in this note remain design candidates.
 
 ## Purpose
 
@@ -350,4 +350,3 @@ Once ACMP receives the public key:
 - binding rotation and retirement screens
 - public-key upload validation
 - runtime loader support for private-key file paths or local secure-key references
-

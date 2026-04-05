@@ -203,6 +203,9 @@ dotnet run --project .\src\MyCompany.Security.MiniKms
 - [minikms_service.md](d:/Research/acmp/docs/minikms_service.md)
   MiniKMS service configuration, persistence, readiness, and key-management runbook.
 
+- [recipient_runtime_setup.md](d:/Research/acmp/docs/recipient_runtime_setup.md)
+  Recipient-side encrypted package loading setup for service validation and client signing, including PEM private-key runtime configuration for `ExternalRsaPublicKey`.
+
 - [external_recipient_wrapping_key_design.md](d:/Research/acmp/docs/external_recipient_wrapping_key_design.md)
   Draft design for cross-platform recipient-owned package decryption keys that do not rely on X.509 certificate stores.
 

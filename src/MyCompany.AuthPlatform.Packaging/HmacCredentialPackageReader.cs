@@ -43,13 +43,20 @@ public sealed record ClientSigningCredentialPackage(
     IReadOnlyList<string> Scopes,
     byte[] Secret);
 
-public sealed record HmacCredentialPackageReadOptions(
-    Guid? ExpectedBindingId,
-    string? ExpectedBindingType,
-    string? ExpectedBindingKeyId,
-    string? ExpectedBindingKeyVersion,
-    string? ExpectedPublicKeyFingerprint,
-    string? ExternalRsaPrivateKeyPath);
+public sealed class HmacCredentialPackageReadOptions
+{
+    public Guid? ExpectedBindingId { get; set; }
+
+    public string? ExpectedBindingType { get; set; }
+
+    public string? ExpectedBindingKeyId { get; set; }
+
+    public string? ExpectedBindingKeyVersion { get; set; }
+
+    public string? ExpectedPublicKeyFingerprint { get; set; }
+
+    public string? ExternalRsaPrivateKeyPath { get; set; }
+}
 
 public interface IHmacCredentialPackageReader
 {
