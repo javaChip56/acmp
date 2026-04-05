@@ -62,11 +62,7 @@ public sealed class X509HmacCredentialPackageProtector : IHmacCredentialPackageP
             definition.Environment.ToString(),
             definition.ExpiresAt,
             definition.IssuedAt,
-            new ProtectionBindingEnvelope(
-                "X509Thumbprint",
-                NormalizeThumbprint(definition.ProtectionBinding.CertificateThumbprint),
-                definition.ProtectionBinding.StoreLocation,
-                definition.ProtectionBinding.StoreName),
+            CreateProtectionBindingEnvelope(definition.ProtectionBinding, certificate),
             new CryptoMetadataEnvelope(
                 ContentEncryptionAlgorithm,
                 KeyEncryptionAlgorithm,
@@ -118,6 +114,37 @@ public sealed class X509HmacCredentialPackageProtector : IHmacCredentialPackageP
         };
     }
 
+    private static ProtectionBindingEnvelope CreateProtectionBindingEnvelope(
+        HmacCredentialPackageProtectionBinding binding,
+        X509Certificate2 certificate)
+    {
+        var bindingType = binding.BindingType?.Trim();
+
+        if (string.Equals(bindingType, RecipientProtectionBindingTypes.X509StoreThumbprint, StringComparison.Ordinal))
+        {
+            return new ProtectionBindingEnvelope(
+                RecipientProtectionBindingTypes.X509StoreThumbprint,
+                NormalizeThumbprint(binding.CertificateThumbprint),
+                binding.StoreLocation,
+                binding.StoreName,
+                null,
+                null);
+        }
+
+        if (string.Equals(bindingType, RecipientProtectionBindingTypes.X509File, StringComparison.Ordinal))
+        {
+            return new ProtectionBindingEnvelope(
+                RecipientProtectionBindingTypes.X509File,
+                NormalizeThumbprint(certificate.Thumbprint),
+                null,
+                null,
+                binding.CertificatePath,
+                binding.PrivateKeyPath);
+        }
+
+        throw new ApplicationServiceException(400, "package_binding_invalid", "The requested protection binding type is not supported.");
+    }
+
     private static string NormalizeThumbprint(string? thumbprint) =>
         string.Concat((thumbprint ?? string.Empty).Where(ch => !char.IsWhiteSpace(ch))).ToUpperInvariant();
 
@@ -146,8 +173,10 @@ public sealed class X509HmacCredentialPackageProtector : IHmacCredentialPackageP
     private sealed record ProtectionBindingEnvelope(
         string BindingType,
         string CertificateThumbprint,
-        string StoreLocation,
-        string StoreName);
+        string? StoreLocation,
+        string? StoreName,
+        string? CertificatePath,
+        string? PrivateKeyPath);
 
     private sealed record CryptoMetadataEnvelope(
         string ContentEncryptionAlgorithm,

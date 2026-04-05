@@ -59,6 +59,18 @@ Typical development URLs will look like:
 - `POST /api/credentials/{credentialId}/revoke`
 - `GET /api/audit`
 
+## Package Binding Modes
+
+Package issuance now supports two recipient protection binding styles:
+
+- `X509StoreThumbprint`
+  Windows-oriented binding using `certificateThumbprint`, `storeLocation`, and `storeName`.
+
+- `X509File`
+  Cross-platform-friendly binding using `certificatePath` and optional `privateKeyPath`, with optional `certificatePem` so the issuer can use an inline public certificate when the API host cannot read the recipient file directly.
+
+The built-in web admin will prompt for the binding type when issuing service or client packages.
+
 ## Bootstrap Users
 
 - `viewer.demo / ViewerPass!123`

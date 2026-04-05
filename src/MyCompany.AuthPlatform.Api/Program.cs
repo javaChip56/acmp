@@ -120,7 +120,7 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<InMemoryPersistenceState>();
 builder.Services.AddAuthPlatformSqlServerPersistence(builder.Configuration);
 builder.Services.AddAuthPlatformPostgresPersistence(builder.Configuration);
-builder.Services.AddSingleton<IX509CertificateResolver, StoreX509CertificateResolver>();
+builder.Services.AddSingleton<IX509CertificateResolver, CompositeX509CertificateResolver>();
 builder.Services.AddSingleton<IHmacCredentialPackageProtector, X509HmacCredentialPackageProtector>();
 builder.Services.AddSingleton<IMasterKeyProvider>(serviceProvider =>
 {

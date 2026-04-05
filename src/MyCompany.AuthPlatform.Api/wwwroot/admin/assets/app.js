@@ -6,14 +6,15 @@ import {
   fetchSystemInfo,
   formatDateTime,
   formatEnum,
+  getRoleCapabilities,
   getRoles,
-  hasRole,
   requireSession,
   toLocalDateTimeInputValue,
 } from "./auth.js";
 
 const state = {
   session: null,
+  capabilities: null,
   systemInfo: null,
   health: null,
   readiness: null,
@@ -54,10 +55,15 @@ const elements = {
   createClientForm: document.getElementById("create-client-form"),
   issueCredentialForm: document.getElementById("issue-credential-form"),
   createAdminUserForm: document.getElementById("create-admin-user-form"),
+  createClientCard: document.getElementById("create-client-card"),
+  issueCredentialCard: document.getElementById("issue-credential-card"),
+  usersNavItem: document.querySelector("[data-section-target='users']")?.closest(".nav-item"),
+  auditNavItem: document.querySelector("[data-section-target='audit']")?.closest(".nav-item"),
 };
 
 document.addEventListener("DOMContentLoaded", async () => {
   state.session = requireSession();
+  state.capabilities = getRoleCapabilities(state.session);
   initializeStaticView();
   wireEvents();
 
@@ -74,9 +80,24 @@ function initializeStaticView() {
   elements.userDisplay.textContent = state.session.displayName ?? state.session.username ?? state.session.actor ?? "Signed in";
   elements.issueCredentialForm.querySelector("[name='expiresAt']").value = toLocalDateTimeInputValue(90);
 
-  if (state.session.roles?.length > 0 && !hasRole(state.session, "AccessAdministrator")) {
-    document.querySelector("[data-section-target='users']")?.closest(".nav-item")?.setAttribute("hidden", "hidden");
-    document.querySelector("[data-section-target='audit']")?.closest(".nav-item")?.setAttribute("hidden", "hidden");
+  if (!state.capabilities.canManageAdminUsers && elements.usersNavItem) {
+    elements.usersNavItem.hidden = true;
+  }
+
+  if (!state.capabilities.canViewAudit && elements.auditNavItem) {
+    elements.auditNavItem.hidden = true;
+  }
+
+  if (!state.capabilities.canManageClients && elements.createClientCard) {
+    elements.createClientCard.hidden = true;
+  }
+
+  if (!state.capabilities.canManageCredentials && elements.issueCredentialCard) {
+    elements.issueCredentialCard.hidden = true;
+  }
+
+  if (!state.capabilities.canViewClients) {
+    showAlert("This session does not include a recognized admin role.", "warning");
   }
 }
 
@@ -105,6 +126,11 @@ function wireEvents() {
 
   elements.createClientForm.addEventListener("submit", async event => {
     event.preventDefault();
+    if (!state.capabilities.canManageClients) {
+      showAlert("Your role cannot create clients.", "warning");
+      return;
+    }
+
     const formData = new FormData(elements.createClientForm);
     const request = {
       clientCode: String(formData.get("clientCode") ?? ""),
@@ -130,6 +156,11 @@ function wireEvents() {
 
   elements.issueCredentialForm.addEventListener("submit", async event => {
     event.preventDefault();
+    if (!state.capabilities.canManageCredentials) {
+      showAlert("Your role cannot issue credentials.", "warning");
+      return;
+    }
+
     if (!state.selectedClientId) {
       showAlert("Select a client first.", "warning");
       return;
@@ -160,6 +191,11 @@ function wireEvents() {
 
   elements.createAdminUserForm.addEventListener("submit", async event => {
     event.preventDefault();
+    if (!state.capabilities.canManageAdminUsers) {
+      showAlert("Your role cannot manage administrative users.", "warning");
+      return;
+    }
+
     const formData = new FormData(elements.createAdminUserForm);
     const roles = [...elements.createAdminUserForm.querySelectorAll("input[name='roles']:checked")].map(
       checkbox => checkbox.value);
@@ -203,9 +239,11 @@ async function bootstrapPortal() {
   renderSystemNotes(state.systemInfo.notes ?? []);
 
   await loadOverview();
-  await loadClients(false);
+  if (state.capabilities.canViewClients) {
+    await loadClients(false);
+  }
 
-  if (hasRole(state.session, "AccessAdministrator") || getRoles(state.session).length === 0) {
+  if (state.capabilities.canManageAdminUsers) {
     await Promise.allSettled([loadAdminUsers(), loadAudit()]);
   }
 
@@ -235,6 +273,13 @@ async function loadOverview() {
 }
 
 async function loadClients(selectFirst) {
+  if (!state.capabilities.canViewClients) {
+    state.clients = [];
+    elements.clientsCount.textContent = "0";
+    elements.clientTableBody.innerHTML = `<tr><td colspan="7" class="text-center text-body-secondary">Your role cannot view clients.</td></tr>`;
+    return;
+  }
+
   state.clients = await apiRequest("/api/clients");
   elements.clientsCount.textContent = String(state.clients.length);
   renderClientTable();
@@ -282,6 +327,11 @@ function renderClientTable() {
 }
 
 async function loadCredentials(clientId, clientName) {
+  if (!state.capabilities.canViewClients) {
+    showAlert("Your role cannot view credentials.", "warning");
+    return;
+  }
+
   state.selectedClientId = clientId;
   state.selectedClientName = clientName;
   const response = await apiRequest(`/api/clients/${clientId}/credentials`);
@@ -310,24 +360,34 @@ function renderCredentialTable() {
       <td>${escapeHtml(formatDateTime(credential.rotationGraceEndsAt))}</td>
       <td>${escapeHtml(formatDateTime(credential.updatedAt))}</td>
       <td class="text-end">
-        <div class="btn-group btn-group-sm">
-          <button type="button" class="btn btn-outline-primary" data-action="rotate">Rotate</button>
-          <button type="button" class="btn btn-outline-danger" data-action="revoke">Revoke</button>
-          <button type="button" class="btn btn-outline-secondary" data-action="service-package">Svc Pkg</button>
-          <button type="button" class="btn btn-outline-secondary" data-action="client-package">Client Pkg</button>
-        </div>
+        ${state.capabilities.canManageCredentials
+          ? `<div class="btn-group btn-group-sm">
+              <button type="button" class="btn btn-outline-primary" data-action="rotate">Rotate</button>
+              <button type="button" class="btn btn-outline-danger" data-action="revoke">Revoke</button>
+              <button type="button" class="btn btn-outline-secondary" data-action="service-package">Svc Pkg</button>
+              <button type="button" class="btn btn-outline-secondary" data-action="client-package">Client Pkg</button>
+            </div>`
+          : `<span class="text-body-secondary small">Read only</span>`}
       </td>
     `;
 
-    row.querySelector("[data-action='rotate']").addEventListener("click", () => rotateCredential(credential));
-    row.querySelector("[data-action='revoke']").addEventListener("click", () => revokeCredential(credential));
-    row.querySelector("[data-action='service-package']").addEventListener("click", () => issuePackage(credential, false));
-    row.querySelector("[data-action='client-package']").addEventListener("click", () => issuePackage(credential, true));
+    if (state.capabilities.canManageCredentials) {
+      row.querySelector("[data-action='rotate']").addEventListener("click", () => rotateCredential(credential));
+      row.querySelector("[data-action='revoke']").addEventListener("click", () => revokeCredential(credential));
+      row.querySelector("[data-action='service-package']").addEventListener("click", () => issuePackage(credential, false));
+      row.querySelector("[data-action='client-package']").addEventListener("click", () => issuePackage(credential, true));
+    }
+
     elements.credentialTableBody.append(row);
   }
 }
 
 async function rotateCredential(credential) {
+  if (!state.capabilities.canManageCredentials) {
+    showAlert("Your role cannot rotate credentials.", "warning");
+    return;
+  }
+
   const expiresAt = prompt("New expiry (ISO 8601)", credential.expiresAt ?? new Date(Date.now() + 90 * 86400000).toISOString());
   if (!expiresAt) {
     return;
@@ -361,6 +421,11 @@ async function rotateCredential(credential) {
 }
 
 async function revokeCredential(credential) {
+  if (!state.capabilities.canManageCredentials) {
+    showAlert("Your role cannot revoke credentials.", "warning");
+    return;
+  }
+
   const reason = prompt("Reason for revocation", "Credential no longer required");
   if (!reason) {
     return;
@@ -379,30 +444,81 @@ async function revokeCredential(credential) {
 }
 
 async function issuePackage(credential, clientPackage) {
-  const certificateThumbprint = prompt("Certificate thumbprint", "");
-  if (!certificateThumbprint) {
+  if (!state.capabilities.canManageCredentials) {
+    showAlert("Your role cannot issue packages.", "warning");
     return;
   }
 
-  const storeLocation = prompt("Certificate store location", "CurrentUser");
-  const storeName = prompt("Certificate store name", "My");
+  const bindingChoice = prompt(
+    "Protection binding type: enter 'store' for Windows certificate store or 'file' for file-based X.509 binding",
+    "store");
+
+  if (!bindingChoice) {
+    return;
+  }
+
   const reason = prompt("Reason", clientPackage ? "Client package issuance" : "Service package issuance");
 
   const path = clientPackage
     ? `/api/credentials/${credential.credentialId}/issue-client-package`
     : `/api/credentials/${credential.credentialId}/issue-encrypted-package`;
 
-  await downloadFromApi(path, {
-    certificateThumbprint,
-    storeLocation: storeLocation || "CurrentUser",
-    storeName: storeName || "My",
-    reason: reason || null,
-  });
+  const normalizedChoice = bindingChoice.trim().toLowerCase();
+  let request;
+
+  if (normalizedChoice === "file") {
+    const certificatePath = prompt("Certificate file path on the recipient machine", "/etc/acmp/recipient-cert.pem");
+    if (!certificatePath) {
+      return;
+    }
+
+    const privateKeyPath = prompt("Private key file path if separate (optional)", "");
+    const certificatePem = prompt("Public certificate PEM for issuance (optional if API host can read the certificate file)", "");
+
+    request = {
+      bindingType: "X509File",
+      certificateThumbprint: null,
+      storeLocation: null,
+      storeName: null,
+      certificatePath,
+      privateKeyPath: privateKeyPath || null,
+      certificatePem: certificatePem || null,
+      reason: reason || null,
+    };
+  } else {
+    const certificateThumbprint = prompt("Certificate thumbprint", "");
+    if (!certificateThumbprint) {
+      return;
+    }
+
+    const storeLocation = prompt("Certificate store location", "CurrentUser");
+    const storeName = prompt("Certificate store name", "My");
+
+    request = {
+      bindingType: "X509StoreThumbprint",
+      certificateThumbprint,
+      storeLocation: storeLocation || "CurrentUser",
+      storeName: storeName || "My",
+      certificatePath: null,
+      privateKeyPath: null,
+      certificatePem: null,
+      reason: reason || null,
+    };
+  }
+
+  await downloadFromApi(path, request);
 
   showAlert(`${clientPackage ? "Client" : "Service"} package downloaded.`, "success");
 }
 
 async function loadAdminUsers() {
+  if (!state.capabilities.canManageAdminUsers) {
+    state.adminUsers = [];
+    elements.usersCount.textContent = "0";
+    elements.adminUserTableBody.innerHTML = `<tr><td colspan="7" class="text-center text-body-secondary">Your role cannot manage administrative users.</td></tr>`;
+    return;
+  }
+
   try {
     state.adminUsers = await apiRequest("/api/admin/users");
     elements.usersCount.textContent = String(state.adminUsers.length);
@@ -447,6 +563,11 @@ function renderAdminUserTable() {
 }
 
 async function updateUserRoles(user) {
+  if (!state.capabilities.canManageAdminUsers) {
+    showAlert("Your role cannot change admin-user roles.", "warning");
+    return;
+  }
+
   const roles = prompt("Roles (comma separated)", (user.roles ?? []).join(", "));
   if (roles === null) {
     return;
@@ -469,6 +590,11 @@ async function updateUserRoles(user) {
 }
 
 async function resetUserPassword(user) {
+  if (!state.capabilities.canManageAdminUsers) {
+    showAlert("Your role cannot reset passwords.", "warning");
+    return;
+  }
+
   const newPassword = prompt(`New password for ${user.username}`, "ChangeMe!123");
   if (!newPassword) {
     return;
@@ -490,6 +616,11 @@ async function resetUserPassword(user) {
 }
 
 async function disableUser(user) {
+  if (!state.capabilities.canManageAdminUsers) {
+    showAlert("Your role cannot disable administrative users.", "warning");
+    return;
+  }
+
   const reason = prompt("Reason", "Administrative user disabled");
   if (reason === null) {
     return;
@@ -510,6 +641,13 @@ async function disableUser(user) {
 }
 
 async function loadAudit() {
+  if (!state.capabilities.canViewAudit) {
+    state.audit = [];
+    elements.auditCount.textContent = "0";
+    elements.auditTableBody.innerHTML = `<tr><td colspan="6" class="text-center text-body-secondary">Your role cannot view the audit log.</td></tr>`;
+    return;
+  }
+
   try {
     state.audit = await apiRequest("/api/audit");
     elements.auditCount.textContent = String(state.audit.length);
@@ -577,7 +715,7 @@ async function refreshCurrentSection() {
 
   if (section === "dashboard") {
     await Promise.allSettled([loadOverview(), loadClients(false)]);
-    if (hasRole(state.session, "AccessAdministrator") || getRoles(state.session).length === 0) {
+    if (state.capabilities.canManageAdminUsers) {
       await Promise.allSettled([loadAdminUsers(), loadAudit()]);
     }
     showAlert("Dashboard refreshed.", "success");
@@ -591,12 +729,24 @@ async function refreshCurrentSection() {
   }
 
   if (section === "users") {
+    if (!state.capabilities.canManageAdminUsers) {
+      showAlert("Your role cannot open Administrative Users.", "warning");
+      switchSection("dashboard");
+      return;
+    }
+
     await loadAdminUsers();
     showAlert("Administrative users refreshed.", "success");
     return;
   }
 
   if (section === "audit") {
+    if (!state.capabilities.canViewAudit) {
+      showAlert("Your role cannot open Audit Log.", "warning");
+      switchSection("dashboard");
+      return;
+    }
+
     await loadAudit();
     showAlert("Audit log refreshed.", "success");
   }

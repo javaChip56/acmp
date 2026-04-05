@@ -130,9 +130,13 @@ public sealed class AuthPlatformApplicationServiceTests
         var package = await service.IssueServiceValidationPackageAsync(
             credential.CredentialId,
             new IssueCredentialPackageRequest(
+                BindingType: RecipientProtectionBindingTypes.X509StoreThumbprint,
                 CertificateThumbprint: "ABCD1234EF567890ABCD1234EF567890ABCD1234",
                 StoreLocation: "CurrentUser",
                 StoreName: "My",
+                CertificatePath: null,
+                PrivateKeyPath: null,
+                CertificatePem: null,
                 Reason: "Issue package for service validation"),
             operatorAccess);
 
@@ -180,9 +184,13 @@ public sealed class AuthPlatformApplicationServiceTests
         await service.IssueServiceValidationPackageAsync(
             credential.CredentialId,
             new IssueCredentialPackageRequest(
+                BindingType: RecipientProtectionBindingTypes.X509StoreThumbprint,
                 CertificateThumbprint: "ABCD1234EF567890ABCD1234EF567890ABCD1234",
                 StoreLocation: "CurrentUser",
                 StoreName: "My",
+                CertificatePath: null,
+                PrivateKeyPath: null,
+                CertificatePem: null,
                 Reason: null),
             operatorAccess);
 

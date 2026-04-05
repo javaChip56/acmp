@@ -146,9 +146,13 @@ Content-Type: application/json
 Authorization: Bearer <paste-token-here>
 
 {
+  "bindingType": "X509StoreThumbprint",
   "certificateThumbprint": "<paste-thumbprint-here>",
   "storeLocation": "CurrentUser",
   "storeName": "My",
+  "certificatePath": null,
+  "privateKeyPath": null,
+  "certificatePem": null,
   "reason": "Issue service-side validation package"
 }
 
@@ -159,9 +163,13 @@ Content-Type: application/json
 Authorization: Bearer <paste-token-here>
 
 {
+  "bindingType": "X509StoreThumbprint",
   "certificateThumbprint": "<paste-thumbprint-here>",
   "storeLocation": "CurrentUser",
   "storeName": "My",
+  "certificatePath": null,
+  "privateKeyPath": null,
+  "certificatePem": null,
   "reason": "Issue client-side signing package"
 }
 

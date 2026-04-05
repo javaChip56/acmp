@@ -110,16 +110,30 @@ public enum CredentialPackageType
     ClientSigning = 2,
 }
 
+public static class RecipientProtectionBindingTypes
+{
+    public const string X509StoreThumbprint = "X509StoreThumbprint";
+    public const string X509File = "X509File";
+}
+
 public sealed record IssueCredentialPackageRequest(
-    string CertificateThumbprint,
-    string StoreLocation,
-    string StoreName,
+    string BindingType,
+    string? CertificateThumbprint,
+    string? StoreLocation,
+    string? StoreName,
+    string? CertificatePath,
+    string? PrivateKeyPath,
+    string? CertificatePem,
     string? Reason);
 
 public sealed record HmacCredentialPackageProtectionBinding(
-    string CertificateThumbprint,
-    string StoreLocation,
-    string StoreName);
+    string BindingType,
+    string? CertificateThumbprint,
+    string? StoreLocation,
+    string? StoreName,
+    string? CertificatePath,
+    string? PrivateKeyPath,
+    string? CertificatePem);
 
 public sealed record HmacCredentialPackageDefinition(
     CredentialPackageType PackageType,

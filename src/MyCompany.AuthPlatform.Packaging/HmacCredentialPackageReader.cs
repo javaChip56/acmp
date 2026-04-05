@@ -63,7 +63,6 @@ public sealed class X509HmacCredentialPackageReader : IHmacCredentialPackageRead
     private const string SupportedSchemaVersion = "acmp.hmac.package.v1";
     private const string ServiceValidationPackageType = "ServiceValidation";
     private const string ClientSigningPackageType = "ClientSigning";
-    private const string BindingType = "X509Thumbprint";
     private const string ContentEncryptionAlgorithm = "A256GCM";
     private const string KeyEncryptionAlgorithm = "RSA-OAEP-256";
 
@@ -216,16 +215,24 @@ public sealed class X509HmacCredentialPackageReader : IHmacCredentialPackageRead
 
     private X509Certificate2 ResolveCertificate(ProtectionBinding binding)
     {
-        if (!string.Equals(binding.BindingType, BindingType, StringComparison.Ordinal))
-        {
-            throw new HmacCredentialPackageException("The package uses an unsupported protection binding type.");
-        }
-
+        var bindingType = RequireText(binding.BindingType, "protectionBinding.bindingType");
         var normalizedThumbprint = NormalizeThumbprint(binding.CertificateThumbprint);
         var certificate = _certificateResolver.Resolve(new MyCompany.AuthPlatform.Application.HmacCredentialPackageProtectionBinding(
+            bindingType,
             normalizedThumbprint,
-            RequireText(binding.StoreLocation, "protectionBinding.storeLocation"),
-            RequireText(binding.StoreName, "protectionBinding.storeName")));
+            string.Equals(bindingType, MyCompany.AuthPlatform.Application.RecipientProtectionBindingTypes.X509StoreThumbprint, StringComparison.Ordinal)
+                ? RequireText(binding.StoreLocation, "protectionBinding.storeLocation")
+                : null,
+            string.Equals(bindingType, MyCompany.AuthPlatform.Application.RecipientProtectionBindingTypes.X509StoreThumbprint, StringComparison.Ordinal)
+                ? RequireText(binding.StoreName, "protectionBinding.storeName")
+                : null,
+            string.Equals(bindingType, MyCompany.AuthPlatform.Application.RecipientProtectionBindingTypes.X509File, StringComparison.Ordinal)
+                ? RequireText(binding.CertificatePath, "protectionBinding.certificatePath")
+                : null,
+            string.Equals(bindingType, MyCompany.AuthPlatform.Application.RecipientProtectionBindingTypes.X509File, StringComparison.Ordinal)
+                ? NormalizeOptionalText(binding.PrivateKeyPath)
+                : null,
+            CertificatePem: null));
 
         if (!string.Equals(NormalizeThumbprint(certificate.Thumbprint), normalizedThumbprint, StringComparison.Ordinal))
         {
@@ -332,6 +339,9 @@ public sealed class X509HmacCredentialPackageReader : IHmacCredentialPackageRead
         return value.Trim();
     }
 
+    private static string? NormalizeOptionalText(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
     private static string NormalizeThumbprint(string? thumbprint) =>
         string.Concat((thumbprint ?? string.Empty).Where(ch => !char.IsWhiteSpace(ch))).ToUpperInvariant();
 
@@ -377,6 +387,10 @@ public sealed class X509HmacCredentialPackageReader : IHmacCredentialPackageRead
         public string? StoreLocation { get; set; }
 
         public string? StoreName { get; set; }
+
+        public string? CertificatePath { get; set; }
+
+        public string? PrivateKeyPath { get; set; }
     }
 
     private sealed class CryptoMetadata

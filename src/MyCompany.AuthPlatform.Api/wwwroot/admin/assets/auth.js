@@ -68,6 +68,25 @@ export function hasRole(session, role) {
   return getRoles(session).includes(role);
 }
 
+export function getRoleCapabilities(session) {
+  const roles = getRoles(session);
+  const isAdministrator = roles.includes("AccessAdministrator");
+  const isOperator = isAdministrator || roles.includes("AccessOperator");
+  const isViewer = isOperator || roles.includes("AccessViewer");
+
+  return {
+    roles,
+    isViewer,
+    isOperator,
+    isAdministrator,
+    canViewClients: isViewer,
+    canManageClients: isOperator,
+    canManageCredentials: isOperator,
+    canManageAdminUsers: isAdministrator,
+    canViewAudit: isAdministrator,
+  };
+}
+
 export function createCorrelationId() {
   if (window.crypto?.randomUUID) {
     return window.crypto.randomUUID();

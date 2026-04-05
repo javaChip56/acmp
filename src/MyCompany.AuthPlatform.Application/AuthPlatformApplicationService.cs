@@ -764,10 +764,7 @@ public sealed class AuthPlatformApplicationService
 
         var scopes = await _unitOfWork.CredentialScopes.ListByCredentialIdAsync(credential.CredentialId, cancellationToken);
         var now = DateTimeOffset.UtcNow;
-        var protectionBinding = new HmacCredentialPackageProtectionBinding(
-            RequireText(request.CertificateThumbprint, "certificateThumbprint"),
-            RequireText(request.StoreLocation, "storeLocation"),
-            RequireText(request.StoreName, "storeName"));
+        var protectionBinding = BuildProtectionBinding(request);
         var packageScopes = scopes
             .Select(scope => scope.ScopeName)
             .OrderBy(scope => scope, StringComparer.Ordinal)
@@ -846,6 +843,50 @@ public sealed class AuthPlatformApplicationService
     private static string? NormalizeOptionalText(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static HmacCredentialPackageProtectionBinding BuildProtectionBinding(IssueCredentialPackageRequest request)
+    {
+        var bindingType = RequireText(request.BindingType, "bindingType");
+        if (string.Equals(bindingType, RecipientProtectionBindingTypes.X509StoreThumbprint, StringComparison.Ordinal))
+        {
+            return new HmacCredentialPackageProtectionBinding(
+                BindingType: RecipientProtectionBindingTypes.X509StoreThumbprint,
+                CertificateThumbprint: RequireText(request.CertificateThumbprint, "certificateThumbprint"),
+                StoreLocation: RequireText(request.StoreLocation, "storeLocation"),
+                StoreName: RequireText(request.StoreName, "storeName"),
+                CertificatePath: null,
+                PrivateKeyPath: null,
+                CertificatePem: null);
+        }
+
+        if (string.Equals(bindingType, RecipientProtectionBindingTypes.X509File, StringComparison.Ordinal))
+        {
+            var certificatePath = RequireText(request.CertificatePath, "certificatePath");
+            var certificatePem = NormalizeOptionalText(request.CertificatePem);
+
+            if (certificatePem is null && certificatePath is null)
+            {
+                throw new ApplicationServiceException(
+                    400,
+                    "package_binding_invalid",
+                    "For X509File bindings, 'certificatePath' is required and 'certificatePem' may be supplied to provide the public certificate at issuance time.");
+            }
+
+            return new HmacCredentialPackageProtectionBinding(
+                BindingType: RecipientProtectionBindingTypes.X509File,
+                CertificateThumbprint: NormalizeOptionalText(request.CertificateThumbprint),
+                StoreLocation: null,
+                StoreName: null,
+                CertificatePath: certificatePath,
+                PrivateKeyPath: NormalizeOptionalText(request.PrivateKeyPath),
+                CertificatePem: certificatePem);
+        }
+
+        throw new ApplicationServiceException(
+            400,
+            "package_binding_invalid",
+            $"The protection binding type '{bindingType}' is not supported.");
     }
 
     private static IReadOnlyList<string> NormalizeScopes(IEnumerable<string>? scopes, bool required)

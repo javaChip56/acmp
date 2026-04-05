@@ -33,9 +33,13 @@ public sealed class CredentialPackageIntegrationTests
             $"/api/credentials/{SeededActiveCredentialId}/issue-client-package",
             new
             {
+                bindingType = "X509StoreThumbprint",
                 certificateThumbprint = certificate.Thumbprint,
                 storeLocation = "CurrentUser",
                 storeName = "My",
+                certificatePath = (string?)null,
+                privateKeyPath = (string?)null,
+                certificatePem = (string?)null,
                 reason = "Integration test client package issuance."
             },
             token);
@@ -75,9 +79,13 @@ public sealed class CredentialPackageIntegrationTests
             $"/api/credentials/{SeededActiveCredentialId}/issue-encrypted-package",
             new
             {
+                bindingType = "X509StoreThumbprint",
                 certificateThumbprint = certificate.Thumbprint,
                 storeLocation = "CurrentUser",
                 storeName = "My",
+                certificatePath = (string?)null,
+                privateKeyPath = (string?)null,
+                certificatePem = (string?)null,
                 reason = "Integration test service package issuance."
             },
             operatorToken);
