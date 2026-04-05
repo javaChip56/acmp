@@ -38,8 +38,11 @@ Internal endpoints:
 - `GET /internal/minikms/keys`
 - `POST /internal/minikms/keys`
 - `POST /internal/minikms/keys/{keyVersion}/activate`
+- `POST /internal/minikms/keys/{keyVersion}/retire`
+- `GET /internal/minikms/audit`
 
 The internal endpoints require the `X-MiniKms-Api-Key` header.
+They also accept an optional `X-MiniKms-Actor` header for audit attribution.
 
 ## Local split-process startup
 
@@ -77,7 +80,7 @@ Update the main API config in [appsettings.json](/d:/Research/acmp/src/MyCompany
 
 When `Provider` is `RemoteMiniKms`, the API keeps using the same application-layer secret protection flow, but the underlying `IMiniKms` implementation becomes an HTTP client to the separate MiniKMS service.
 
-## Rotate the MiniKMS active key
+## Rotate and soft-retire keys
 
 Create a new key version:
 
@@ -101,6 +104,17 @@ Invoke-RestMethod `
   -Headers $headers
 ```
 
+Activating a new key automatically soft-retires the previous active key. Retired keys are no longer used for new encryption, but they remain available for decrypting previously wrapped material.
+
+You can also soft-retire a non-active key explicitly:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri https://localhost:7190/internal/minikms/keys/kms-v2/retire `
+  -Headers $headers
+```
+
 List known key versions:
 
 ```powershell
@@ -110,8 +124,20 @@ Invoke-RestMethod `
   -Headers $headers
 ```
 
+Read recent MiniKMS audit events:
+
+```powershell
+$headers["X-MiniKms-Actor"] = "ops-user"
+
+Invoke-RestMethod `
+  -Method Get `
+  -Uri https://localhost:7190/internal/minikms/audit?take=20 `
+  -Headers $headers
+```
+
 ## Notes
 
 - `ActiveKeyVersion` remains explicit in the API config so the host can expose it in `/health` and use it as the default key version for new secrets.
 - `MasterKeys` are only used by the local provider path in the main API. In remote mode, the actual wrapping keys live in the MiniKMS service process.
+- MiniKMS key states are currently `Active`, `Available`, and `Retired`. Retired keys are decrypt-only.
 - Future implementations such as Windows Certificate Store or DPAPI-backed providers can still be added without changing the application-layer contracts.

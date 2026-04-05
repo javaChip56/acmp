@@ -11,6 +11,8 @@ internal interface IRotatingMasterKeyProvider : IMasterKeyProvider
     MiniKmsKeyVersionSummary AddKeyVersion(string? keyVersion, byte[]? masterKey, bool activate);
 
     MiniKmsKeyVersionSummary ActivateKeyVersion(string keyVersion);
+
+    MiniKmsKeyVersionSummary RetireKeyVersion(string keyVersion);
 }
 
 internal sealed class RotatingMasterKeyProvider : IRotatingMasterKeyProvider
@@ -36,7 +38,7 @@ internal sealed class RotatingMasterKeyProvider : IRotatingMasterKeyProvider
         _activeKeyVersion = activeKeyVersion.Trim();
         _keyRecords = masterKeys.ToDictionary(
             pair => pair.Key,
-            pair => new KeyRecord(pair.Value, DateTimeOffset.UtcNow, null),
+            pair => new KeyRecord(pair.Value, DateTimeOffset.UtcNow, null, null),
             StringComparer.Ordinal);
 
         if (!_keyRecords.ContainsKey(_activeKeyVersion))
@@ -73,9 +75,11 @@ internal sealed class RotatingMasterKeyProvider : IRotatingMasterKeyProvider
                 .OrderBy(pair => pair.Key, StringComparer.Ordinal)
                 .Select(pair => new MiniKmsKeyVersionSummary(
                     pair.Key,
+                    ResolveStatus(pair.Key, pair.Value),
                     string.Equals(pair.Key, _activeKeyVersion, StringComparison.Ordinal),
                     pair.Value.CreatedAt,
-                    pair.Value.ActivatedAt))
+                    pair.Value.ActivatedAt,
+                    pair.Value.RetiredAt))
                 .ToArray();
         }
     }
@@ -100,17 +104,24 @@ internal sealed class RotatingMasterKeyProvider : IRotatingMasterKeyProvider
             }
 
             var now = DateTimeOffset.UtcNow;
-            _keyRecords[resolvedKeyVersion] = new KeyRecord(resolvedMasterKey.ToArray(), now, activate ? now : null);
+            _keyRecords[resolvedKeyVersion] = new KeyRecord(
+                resolvedMasterKey.ToArray(),
+                now,
+                activate ? now : null,
+                null);
             if (activate)
             {
+                RetireCurrentActiveKey(now);
                 _activeKeyVersion = resolvedKeyVersion;
             }
 
             return new MiniKmsKeyVersionSummary(
                 resolvedKeyVersion,
+                activate ? "Active" : "Available",
                 activate,
                 now,
-                activate ? now : null);
+                activate ? now : null,
+                null);
         }
     }
 
@@ -128,12 +139,50 @@ internal sealed class RotatingMasterKeyProvider : IRotatingMasterKeyProvider
             }
 
             var now = DateTimeOffset.UtcNow;
+            RetireCurrentActiveKey(now);
             _activeKeyVersion = resolvedKeyVersion;
-            _keyRecords[resolvedKeyVersion] = record with { ActivatedAt = now };
+            _keyRecords[resolvedKeyVersion] = record with
+            {
+                ActivatedAt = now,
+                RetiredAt = null
+            };
             return new MiniKmsKeyVersionSummary(
                 resolvedKeyVersion,
+                "Active",
                 true,
                 record.CreatedAt,
+                now,
+                null);
+        }
+    }
+
+    public MiniKmsKeyVersionSummary RetireKeyVersion(string keyVersion)
+    {
+        var resolvedKeyVersion = string.IsNullOrWhiteSpace(keyVersion)
+            ? throw new ArgumentException("A MiniKMS key version is required.", nameof(keyVersion))
+            : keyVersion.Trim();
+
+        lock (_sync)
+        {
+            if (!_keyRecords.TryGetValue(resolvedKeyVersion, out var record))
+            {
+                throw new InvalidOperationException($"MiniKMS key version '{resolvedKeyVersion}' does not exist.");
+            }
+
+            if (string.Equals(resolvedKeyVersion, _activeKeyVersion, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("The active MiniKMS key version cannot be retired directly. Activate a replacement key first.");
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var retiredRecord = record with { RetiredAt = now };
+            _keyRecords[resolvedKeyVersion] = retiredRecord;
+            return new MiniKmsKeyVersionSummary(
+                resolvedKeyVersion,
+                "Retired",
+                false,
+                record.CreatedAt,
+                record.ActivatedAt,
                 now);
         }
     }
@@ -151,8 +200,27 @@ internal sealed class RotatingMasterKeyProvider : IRotatingMasterKeyProvider
         }
     }
 
+    private void RetireCurrentActiveKey(DateTimeOffset retiredAt)
+    {
+        if (_keyRecords.TryGetValue(_activeKeyVersion, out var currentRecord))
+        {
+            _keyRecords[_activeKeyVersion] = currentRecord with { RetiredAt = retiredAt };
+        }
+    }
+
+    private string ResolveStatus(string keyVersion, KeyRecord record)
+    {
+        if (string.Equals(keyVersion, _activeKeyVersion, StringComparison.Ordinal))
+        {
+            return "Active";
+        }
+
+        return record.RetiredAt.HasValue ? "Retired" : "Available";
+    }
+
     private sealed record KeyRecord(
         byte[] MasterKey,
         DateTimeOffset CreatedAt,
-        DateTimeOffset? ActivatedAt);
+        DateTimeOffset? ActivatedAt,
+        DateTimeOffset? RetiredAt);
 }

@@ -29,6 +29,7 @@ builder.Services.AddSingleton<IRotatingMasterKeyProvider>(serviceProvider =>
 builder.Services.AddSingleton<IMasterKeyProvider>(serviceProvider =>
     serviceProvider.GetRequiredService<IRotatingMasterKeyProvider>());
 builder.Services.AddSingleton<IMiniKms, LocalMiniKms>();
+builder.Services.AddSingleton<IMiniKmsAuditLog, InMemoryMiniKmsAuditLog>();
 
 var app = builder.Build();
 
@@ -43,6 +44,7 @@ app.UseHttpsRedirection();
 var miniKms = app.Services.GetRequiredService<IMiniKms>();
 var options = app.Services.GetRequiredService<IOptions<MiniKmsServiceOptions>>().Value;
 var rotatingProvider = app.Services.GetRequiredService<IRotatingMasterKeyProvider>();
+var auditLog = app.Services.GetRequiredService<IMiniKmsAuditLog>();
 
 app.MapGet("/health", () =>
 {
@@ -71,9 +73,15 @@ internalApi.AddEndpointFilter(async (context, next) =>
     return await next(context);
 });
 
-internalApi.MapPost("/generate-secret", (GenerateSecretRequest request) =>
+internalApi.MapPost("/generate-secret", (GenerateSecretRequest request, HttpContext httpContext) =>
 {
     var secret = miniKms.GenerateRandomSecret(request.SizeInBytes);
+    auditLog.Write(
+        "GenerateSecret",
+        "Success",
+        ResolveActor(httpContext),
+        miniKms.ActiveKeyVersion,
+        $"Generated {request.SizeInBytes} bytes of secret material.");
     return TypedResults.Ok(new GenerateSecretResponse(
         Convert.ToBase64String(secret),
         miniKms.ActiveKeyVersion,
@@ -82,10 +90,16 @@ internalApi.MapPost("/generate-secret", (GenerateSecretRequest request) =>
 .WithName("GenerateMiniKmsSecret")
 .WithOpenApi();
 
-internalApi.MapPost("/encrypt", (EncryptSecretRequest request) =>
+internalApi.MapPost("/encrypt", (EncryptSecretRequest request, HttpContext httpContext) =>
 {
     var plaintext = Convert.FromBase64String(request.PlaintextBase64);
     var package = miniKms.Encrypt(plaintext, request.KeyVersion);
+    auditLog.Write(
+        "EncryptSecret",
+        "Success",
+        ResolveActor(httpContext),
+        package.KeyVersion,
+        $"Encrypted {plaintext.Length} bytes of secret material.");
     return TypedResults.Ok(new EncryptSecretResponse(
         Convert.ToBase64String(package.EncryptedSecret),
         Convert.ToBase64String(package.EncryptedDataKey),
@@ -98,7 +112,7 @@ internalApi.MapPost("/encrypt", (EncryptSecretRequest request) =>
 .WithName("EncryptMiniKmsSecret")
 .WithOpenApi();
 
-internalApi.MapPost("/decrypt", (DecryptSecretRequest request) =>
+internalApi.MapPost("/decrypt", (DecryptSecretRequest request, HttpContext httpContext) =>
 {
     var plaintext = miniKms.Decrypt(new EncryptedSecretPackage(
         Convert.FromBase64String(request.EncryptedSecretBase64),
@@ -107,6 +121,12 @@ internalApi.MapPost("/decrypt", (DecryptSecretRequest request) =>
         request.EncryptionAlgorithm,
         Convert.FromBase64String(request.IvBase64),
         Convert.FromBase64String(request.TagBase64)));
+    auditLog.Write(
+        "DecryptSecret",
+        "Success",
+        ResolveActor(httpContext),
+        request.KeyVersion,
+        $"Decrypted {plaintext.Length} bytes of secret material.");
     return TypedResults.Ok(new DecryptSecretResponse(
         Convert.ToBase64String(plaintext),
         request.KeyVersion,
@@ -122,14 +142,30 @@ internalApi.MapGet("/keys", () =>
 .WithName("ListMiniKmsKeys")
 .WithOpenApi();
 
-internalApi.MapPost("/keys", (CreateKeyVersionRequest request) =>
+internalApi.MapGet("/audit", (int? take) =>
+{
+    return TypedResults.Ok(auditLog.List(take ?? 50));
+})
+.WithName("ListMiniKmsAudit")
+.WithOpenApi();
+
+internalApi.MapPost("/keys", (CreateKeyVersionRequest request, HttpContext httpContext) =>
 {
     try
     {
         var keyMaterial = string.IsNullOrWhiteSpace(request.MasterKeyBase64)
             ? null
             : Convert.FromBase64String(request.MasterKeyBase64);
-        return TypedResults.Ok(rotatingProvider.AddKeyVersion(request.KeyVersion, keyMaterial, request.Activate));
+        var summary = rotatingProvider.AddKeyVersion(request.KeyVersion, keyMaterial, request.Activate);
+        auditLog.Write(
+            "CreateKeyVersion",
+            "Success",
+            ResolveActor(httpContext),
+            summary.KeyVersion,
+            summary.IsActive
+                ? "Created and activated a new MiniKMS key version."
+                : "Created a new MiniKMS key version.");
+        return TypedResults.Ok(summary);
     }
     catch (FormatException)
     {
@@ -139,12 +175,14 @@ internalApi.MapPost("/keys", (CreateKeyVersionRequest request) =>
     }
     catch (ArgumentException exception)
     {
+        auditLog.Write("CreateKeyVersion", "Rejected", ResolveActor(httpContext), request.KeyVersion, exception.Message);
         return Results.Json(
             new { errorCode = "minikms_validation_error", message = exception.Message },
             statusCode: StatusCodes.Status400BadRequest);
     }
     catch (InvalidOperationException exception)
     {
+        auditLog.Write("CreateKeyVersion", "Rejected", ResolveActor(httpContext), request.KeyVersion, exception.Message);
         return Results.Json(
             new { errorCode = "minikms_conflict", message = exception.Message },
             statusCode: StatusCodes.Status409Conflict);
@@ -153,20 +191,29 @@ internalApi.MapPost("/keys", (CreateKeyVersionRequest request) =>
 .WithName("CreateMiniKmsKey")
 .WithOpenApi();
 
-internalApi.MapPost("/keys/{keyVersion}/activate", (string keyVersion) =>
+internalApi.MapPost("/keys/{keyVersion}/activate", (string keyVersion, HttpContext httpContext) =>
 {
     try
     {
-        return TypedResults.Ok(rotatingProvider.ActivateKeyVersion(keyVersion));
+        var summary = rotatingProvider.ActivateKeyVersion(keyVersion);
+        auditLog.Write(
+            "ActivateKeyVersion",
+            "Success",
+            ResolveActor(httpContext),
+            summary.KeyVersion,
+            "Activated a MiniKMS key version and soft-retired the previous active key.");
+        return TypedResults.Ok(summary);
     }
     catch (ArgumentException exception)
     {
+        auditLog.Write("ActivateKeyVersion", "Rejected", ResolveActor(httpContext), keyVersion, exception.Message);
         return Results.Json(
             new { errorCode = "minikms_validation_error", message = exception.Message },
             statusCode: StatusCodes.Status400BadRequest);
     }
     catch (InvalidOperationException exception)
     {
+        auditLog.Write("ActivateKeyVersion", "Rejected", ResolveActor(httpContext), keyVersion, exception.Message);
         return Results.Json(
             new { errorCode = "minikms_not_found", message = exception.Message },
             statusCode: StatusCodes.Status404NotFound);
@@ -174,6 +221,51 @@ internalApi.MapPost("/keys/{keyVersion}/activate", (string keyVersion) =>
 })
 .WithName("ActivateMiniKmsKey")
 .WithOpenApi();
+
+internalApi.MapPost("/keys/{keyVersion}/retire", (string keyVersion, HttpContext httpContext) =>
+{
+    try
+    {
+        var summary = rotatingProvider.RetireKeyVersion(keyVersion);
+        auditLog.Write(
+            "RetireKeyVersion",
+            "Success",
+            ResolveActor(httpContext),
+            summary.KeyVersion,
+            "Soft-retired a MiniKMS key version. The key remains available for decryption only.");
+        return TypedResults.Ok(summary);
+    }
+    catch (ArgumentException exception)
+    {
+        auditLog.Write("RetireKeyVersion", "Rejected", ResolveActor(httpContext), keyVersion, exception.Message);
+        return Results.Json(
+            new { errorCode = "minikms_validation_error", message = exception.Message },
+            statusCode: StatusCodes.Status400BadRequest);
+    }
+    catch (InvalidOperationException exception)
+    {
+        auditLog.Write("RetireKeyVersion", "Rejected", ResolveActor(httpContext), keyVersion, exception.Message);
+        return Results.Json(
+            new
+            {
+                errorCode = exception.Message.Contains("cannot be retired directly", StringComparison.OrdinalIgnoreCase)
+                    ? "minikms_invalid_state"
+                    : "minikms_not_found",
+                message = exception.Message
+            },
+            statusCode: exception.Message.Contains("cannot be retired directly", StringComparison.OrdinalIgnoreCase)
+                ? StatusCodes.Status409Conflict
+                : StatusCodes.Status404NotFound);
+    }
+})
+.WithName("RetireMiniKmsKey")
+.WithOpenApi();
+
+static string ResolveActor(HttpContext httpContext)
+{
+    var actor = httpContext.Request.Headers[RemoteMiniKmsClient.ActorHeaderName].ToString();
+    return string.IsNullOrWhiteSpace(actor) ? "system" : actor.Trim();
+}
 
 app.Run();
 

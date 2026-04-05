@@ -87,7 +87,8 @@ public sealed class MiniKmsIntegrationTests
         var health = await client.GetFromJsonAsync<MiniKmsHealthResponse>("/health");
 
         Assert.NotNull(keys);
-        Assert.Contains(keys!, key => key.KeyVersion == "kms-v2" && key.IsActive);
+        Assert.Contains(keys!, key => key.KeyVersion == "kms-v2" && key.IsActive && key.Status == "Active");
+        Assert.Contains(keys!, key => key.KeyVersion == "kms-v1" && !key.IsActive && key.Status == "Retired" && key.RetiredAt.HasValue);
         Assert.Equal("kms-v2", health?.ActiveKeyVersion);
     }
 
@@ -109,6 +110,59 @@ public sealed class MiniKmsIntegrationTests
 
         Assert.Equal("RemoteMiniKms", health?["miniKmsProvider"]?.GetValue<string>());
         Assert.Equal("kms-v2", health?["miniKmsKeyVersion"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task MiniKmsService_ExposesAuditLogAndSoftRetiresExplicitKey()
+    {
+        using var factory = new MiniKmsFactory();
+        using var client = factory.CreateClient();
+
+        var createRequest = new HttpRequestMessage(HttpMethod.Post, "/internal/minikms/keys")
+        {
+            Content = JsonContent.Create(new CreateKeyVersionRequest("kms-v2", null, false))
+        };
+        createRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+        createRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ActorHeaderName, "ops-user");
+        var createResponse = await client.SendAsync(createRequest);
+        createResponse.EnsureSuccessStatusCode();
+
+        var retireRequest = new HttpRequestMessage(HttpMethod.Post, "/internal/minikms/keys/kms-v2/retire");
+        retireRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+        retireRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ActorHeaderName, "ops-user");
+        var retireResponse = await client.SendAsync(retireRequest);
+        retireResponse.EnsureSuccessStatusCode();
+
+        var keysRequest = new HttpRequestMessage(HttpMethod.Get, "/internal/minikms/keys");
+        keysRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+        var keysResponse = await client.SendAsync(keysRequest);
+        keysResponse.EnsureSuccessStatusCode();
+        var keys = await keysResponse.Content.ReadFromJsonAsync<MiniKmsKeyVersionSummary[]>();
+
+        var auditRequest = new HttpRequestMessage(HttpMethod.Get, "/internal/minikms/audit?take=10");
+        auditRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+        var auditResponse = await client.SendAsync(auditRequest);
+        auditResponse.EnsureSuccessStatusCode();
+        var auditEntries = await auditResponse.Content.ReadFromJsonAsync<MiniKmsAuditEntry[]>();
+
+        Assert.NotNull(keys);
+        Assert.Contains(keys!, key => key.KeyVersion == "kms-v2" && key.Status == "Retired" && key.RetiredAt.HasValue);
+        Assert.NotNull(auditEntries);
+        Assert.Contains(auditEntries!, entry => entry.Action == "CreateKeyVersion" && entry.Actor == "ops-user" && entry.KeyVersion == "kms-v2");
+        Assert.Contains(auditEntries!, entry => entry.Action == "RetireKeyVersion" && entry.Actor == "ops-user" && entry.KeyVersion == "kms-v2");
+    }
+
+    [Fact]
+    public async Task MiniKmsService_RejectsRetiringActiveKey()
+    {
+        using var factory = new MiniKmsFactory();
+        using var client = factory.CreateClient();
+
+        var retireRequest = new HttpRequestMessage(HttpMethod.Post, "/internal/minikms/keys/kms-v1/retire");
+        retireRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+        var retireResponse = await client.SendAsync(retireRequest);
+
+        Assert.Equal(HttpStatusCode.Conflict, retireResponse.StatusCode);
     }
 
     private sealed class MiniKmsFactory : WebApplicationFactory<MiniKmsEntryPoint>

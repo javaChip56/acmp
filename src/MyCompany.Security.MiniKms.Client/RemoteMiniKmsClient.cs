@@ -7,6 +7,7 @@ public sealed class RemoteMiniKmsClient : IMiniKms
 {
     public const string HttpClientName = "RemoteMiniKms";
     public const string ApiKeyHeaderName = "X-MiniKms-Api-Key";
+    public const string ActorHeaderName = "X-MiniKms-Actor";
 
     private readonly HttpClient _httpClient;
     private readonly string _apiKey;
@@ -97,6 +98,7 @@ public sealed class RemoteMiniKmsClient : IMiniKms
             Content = content
         };
         request.Headers.TryAddWithoutValidation(ApiKeyHeaderName, _apiKey);
+        request.Headers.TryAddWithoutValidation(ActorHeaderName, "acmp-api");
         return request;
     }
 

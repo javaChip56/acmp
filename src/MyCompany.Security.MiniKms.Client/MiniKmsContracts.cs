@@ -40,11 +40,22 @@ public sealed record MiniKmsHealthResponse(
 
 public sealed record MiniKmsKeyVersionSummary(
     string KeyVersion,
+    string Status,
     bool IsActive,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? ActivatedAt);
+    DateTimeOffset? ActivatedAt,
+    DateTimeOffset? RetiredAt);
 
 public sealed record CreateKeyVersionRequest(
     string? KeyVersion,
     string? MasterKeyBase64,
     bool Activate);
+
+public sealed record MiniKmsAuditEntry(
+    string AuditId,
+    DateTimeOffset Timestamp,
+    string Action,
+    string Outcome,
+    string Actor,
+    string? KeyVersion,
+    string Details);
