@@ -95,6 +95,12 @@
       "description": "Logical data store for service or client records, credential metadata, scopes, and HMAC detail records."
     },
     {
+      "unique-id": "recipient-protection-binding-store",
+      "node-type": "data-asset",
+      "name": "Recipient Protection Binding Store",
+      "description": "Logical data store for recipient protection bindings such as X.509 references and registered external RSA public-key bindings used for package issuance."
+    },
+    {
       "unique-id": "administrative-identity-store",
       "node-type": "data-asset",
       "name": "Administrative Identity Store",
@@ -110,13 +116,13 @@
       "unique-id": "encrypted-credential-package",
       "node-type": "data-asset",
       "name": "Encrypted Credential Package",
-      "description": "Versioned encrypted JSON package artifact issued per KeyId for recipient-side HMAC validation in EncryptedFile mode, bound to an approved X.509 protection context."
+      "description": "Versioned encrypted JSON package artifact issued per KeyId for recipient-side HMAC validation in EncryptedFile mode, bound to an approved protection context such as X.509 or a registered external RSA public-key binding."
     },
     {
       "unique-id": "encrypted-client-credential-package",
       "node-type": "data-asset",
       "name": "Encrypted Client Credential Package",
-      "description": "Versioned encrypted JSON package artifact issued per KeyId for client-side outbound HMAC signing, bound to an approved X.509 protection context."
+      "description": "Versioned encrypted JSON package artifact issued per KeyId for client-side outbound HMAC signing, bound to an approved protection context such as X.509 or a registered external RSA public-key binding."
     }
   ],
   "relationships": [
@@ -196,6 +202,20 @@
           },
           "destination": {
             "node": "credential-record-store"
+          }
+        }
+      }
+    },
+    {
+      "unique-id": "management-api-to-recipient-protection-binding-store",
+      "description": "Reads and persists recipient protection bindings, including X.509 metadata and externally provisioned public-key bindings, in",
+      "relationship-type": {
+        "connects": {
+          "source": {
+            "node": "credential-management-api"
+          },
+          "destination": {
+            "node": "recipient-protection-binding-store"
           }
         }
       }
@@ -301,7 +321,7 @@
     },
     {
       "unique-id": "management-api-to-encrypted-credential-package",
-      "description": "Issues versioned recipient-side encrypted package envelopes to",
+      "description": "Issues versioned recipient-side encrypted package envelopes using the selected recipient protection binding to",
       "relationship-type": {
         "connects": {
           "source": {
@@ -315,7 +335,7 @@
     },
     {
       "unique-id": "management-api-to-encrypted-client-credential-package",
-      "description": "Issues versioned client-side encrypted package envelopes to",
+      "description": "Issues versioned client-side encrypted package envelopes using the selected recipient protection binding to",
       "relationship-type": {
         "connects": {
           "source": {
@@ -372,7 +392,7 @@
     },
     {
       "unique-id": "protected-recipient-service-to-encrypted-credential-package",
-      "description": "Loads, decrypts, and validates recipient-side encrypted package envelopes from",
+      "description": "Loads, decrypts, and validates recipient-side encrypted package envelopes using local private-key or certificate material for the selected protection binding from",
       "relationship-type": {
         "connects": {
           "source": {
@@ -386,7 +406,7 @@
     },
     {
       "unique-id": "client-service-to-encrypted-client-credential-package",
-      "description": "Loads, decrypts, and validates outbound signing package envelopes from",
+      "description": "Loads, decrypts, and validates outbound signing package envelopes using local private-key or certificate material for the selected protection binding from",
       "relationship-type": {
         "connects": {
           "source": {
@@ -433,6 +453,7 @@
           "container": "credential-persistence-store",
           "nodes": [
             "credential-record-store",
+            "recipient-protection-binding-store",
             "administrative-identity-store",
             "audit-event-store"
           ]
@@ -737,6 +758,65 @@
       ]
     },
     {
+      "unique-id": "manage-recipient-protection-bindings-flow",
+      "name": "Manage Recipient Protection Bindings",
+      "description": "AccessOperator or AccessAdministrator registers, activates, retires, or reviews recipient protection bindings such as X.509 references and externally provisioned RSA public keys.",
+      "transitions": [
+        {
+          "relationship-unique-id": "access-operator-uses-admin-portal",
+          "sequence-number": 1,
+          "description": "AccessOperator starts recipient protection binding management from the admin portal."
+        },
+        {
+          "relationship-unique-id": "admin-portal-to-management-api",
+          "sequence-number": 2,
+          "description": "Admin portal submits the recipient protection binding request to the credential management API."
+        },
+        {
+          "relationship-unique-id": "management-api-to-recipient-protection-binding-store",
+          "sequence-number": 3,
+          "description": "Credential management API persists or reads recipient protection binding metadata and public-key material."
+        },
+        {
+          "relationship-unique-id": "management-api-to-audit-event-store",
+          "sequence-number": 4,
+          "description": "Credential management API records the recipient protection binding audit event."
+        }
+      ]
+    },
+    {
+      "unique-id": "rotate-recipient-protection-binding-flow",
+      "name": "Rotate Recipient Protection Binding",
+      "description": "AccessOperator or AccessAdministrator rolls a recipient protection binding to a new public key or X.509 reference and re-issues packages against the new binding.",
+      "transitions": [
+        {
+          "relationship-unique-id": "access-operator-uses-admin-portal",
+          "sequence-number": 1,
+          "description": "AccessOperator starts recipient protection binding rotation from the admin portal."
+        },
+        {
+          "relationship-unique-id": "admin-portal-to-management-api",
+          "sequence-number": 2,
+          "description": "Admin portal submits the recipient protection binding rotation request to the credential management API."
+        },
+        {
+          "relationship-unique-id": "management-api-to-recipient-protection-binding-store",
+          "sequence-number": 3,
+          "description": "Credential management API persists the new active recipient protection binding and retires or flags the previous binding as needed."
+        },
+        {
+          "relationship-unique-id": "management-api-to-encrypted-credential-package",
+          "sequence-number": 4,
+          "description": "Credential management API can re-issue recipient-side encrypted packages against the new active binding."
+        },
+        {
+          "relationship-unique-id": "management-api-to-audit-event-store",
+          "sequence-number": 5,
+          "description": "Credential management API records the recipient protection binding rotation audit event."
+        }
+      ]
+    },
+    {
       "unique-id": "manage-mini-kms-key-versions-flow",
       "name": "Manage MiniKMS Key Versions",
       "description": "AccessAdministrator performs internal MiniKMS key creation, activation, or retirement operations against the MiniKMS service, with persisted key-state and audit capture.",
@@ -818,8 +898,13 @@
           "description": "Admin portal submits the issuance request to the credential management API."
         },
         {
-          "relationship-unique-id": "management-api-to-encrypted-credential-package",
+          "relationship-unique-id": "management-api-to-recipient-protection-binding-store",
           "sequence-number": 3,
+          "description": "Credential management API resolves the selected recipient protection binding and its metadata."
+        },
+        {
+          "relationship-unique-id": "management-api-to-encrypted-credential-package",
+          "sequence-number": 4,
           "description": "Credential management API issues the recipient-side encrypted JSON package envelope with binding and cryptographic metadata."
         }
       ]
@@ -888,7 +973,7 @@
         {
           "relationship-unique-id": "protected-recipient-service-to-encrypted-credential-package",
           "sequence-number": 1,
-          "description": "Protected recipient service reads the replacement package envelope, validates schema and protection binding, and decrypts it before activation."
+          "description": "Protected recipient service reads the replacement package envelope, validates schema, package identity, protection binding metadata, and encrypted payload, and decrypts it before activation."
         }
       ]
     },
@@ -900,7 +985,7 @@
         {
           "relationship-unique-id": "client-service-to-encrypted-client-credential-package",
           "sequence-number": 1,
-          "description": "Client service reads the replacement package envelope, validates schema and protection binding, and decrypts it before activation."
+          "description": "Client service reads the replacement package envelope, validates schema, package identity, protection binding metadata, and encrypted payload, and decrypts it before activation."
         }
       ]
     },
@@ -942,8 +1027,13 @@
           "description": "Admin portal submits the client package issuance request to the credential management API."
         },
         {
-          "relationship-unique-id": "management-api-to-encrypted-client-credential-package",
+          "relationship-unique-id": "management-api-to-recipient-protection-binding-store",
           "sequence-number": 3,
+          "description": "Credential management API resolves the selected recipient protection binding and its metadata."
+        },
+        {
+          "relationship-unique-id": "management-api-to-encrypted-client-credential-package",
+          "sequence-number": 4,
           "description": "Credential management API issues the client-side encrypted JSON package envelope with binding and cryptographic metadata."
         }
       ]
