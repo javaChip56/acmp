@@ -62,7 +62,25 @@
       "unique-id": "mini-kms",
       "node-type": "service",
       "name": "MiniKMS",
-      "description": "Internal cryptographic component used for HMAC secret generation, envelope encryption, decryption, and key versioning."
+      "description": "Internal cryptographic service used for HMAC secret generation, envelope encryption, decryption, persisted key lifecycle management, and MiniKMS audit capture."
+    },
+    {
+      "unique-id": "mini-kms-state-persistence-store",
+      "node-type": "database",
+      "name": "MiniKMS State Persistence Store",
+      "description": "MiniKMS persistence layer that may run in file-backed, SQL Server, PostgreSQL, or demo in-memory mode depending on deployment configuration."
+    },
+    {
+      "unique-id": "mini-kms-key-store",
+      "node-type": "data-asset",
+      "name": "MiniKMS Key Store",
+      "description": "Logical data store for MiniKMS master-key versions, active-key tracking, and retired-key lifecycle state."
+    },
+    {
+      "unique-id": "mini-kms-audit-store",
+      "node-type": "data-asset",
+      "name": "MiniKMS Audit Store",
+      "description": "Logical data store for MiniKMS operational audit events such as key creation, activation, retirement, and secret-operation activity."
     },
     {
       "unique-id": "credential-persistence-store",
@@ -226,7 +244,7 @@
     },
     {
       "unique-id": "management-api-to-mini-kms",
-      "description": "Uses cryptographic secret generation and protection services from",
+      "description": "Uses remote cryptographic secret generation and protection services from",
       "relationship-type": {
         "connects": {
           "source": {
@@ -234,6 +252,49 @@
           },
           "destination": {
             "node": "mini-kms"
+          }
+        }
+      }
+    },
+    {
+      "unique-id": "access-administrator-to-mini-kms",
+      "description": "Performs internal MiniKMS key lifecycle and audit operations against",
+      "relationship-type": {
+        "connects": {
+          "source": {
+            "node": "access-administrator"
+          },
+          "destination": {
+            "node": "mini-kms"
+          }
+        }
+      },
+      "protocol": "HTTPS"
+    },
+    {
+      "unique-id": "mini-kms-to-mini-kms-key-store",
+      "description": "Reads and persists key-version records and lifecycle state in",
+      "relationship-type": {
+        "connects": {
+          "source": {
+            "node": "mini-kms"
+          },
+          "destination": {
+            "node": "mini-kms-key-store"
+          }
+        }
+      }
+    },
+    {
+      "unique-id": "mini-kms-to-mini-kms-audit-store",
+      "description": "Reads and persists MiniKMS operational audit events in",
+      "relationship-type": {
+        "connects": {
+          "source": {
+            "node": "mini-kms"
+          },
+          "destination": {
+            "node": "mini-kms-audit-store"
           }
         }
       }
@@ -352,6 +413,19 @@
       }
     },
     {
+      "unique-id": "mini-kms-persistence-store-composed-of-logical-stores",
+      "description": "Contains logical MiniKMS data stores",
+      "relationship-type": {
+        "composed-of": {
+          "container": "mini-kms-state-persistence-store",
+          "nodes": [
+            "mini-kms-key-store",
+            "mini-kms-audit-store"
+          ]
+        }
+      }
+    },
+    {
       "unique-id": "persistence-store-composed-of-logical-stores",
       "description": "Contains logical internal data stores",
       "relationship-type": {
@@ -373,6 +447,7 @@
           "container": "acmp-platform",
           "nodes": [
             "mini-kms",
+            "mini-kms-state-persistence-store",
             "encrypted-credential-package",
             "encrypted-client-credential-package"
           ]
@@ -553,7 +628,7 @@
     {
       "unique-id": "issue-hmac-credential-flow",
       "name": "Issue HMAC Credential",
-      "description": "AccessOperator or AccessAdministrator issues a new HMAC credential using the portal, management API, MiniKMS, and persistence store.",
+      "description": "AccessOperator or AccessAdministrator issues a new HMAC credential using the portal, management API, remote MiniKMS, and persistence stores.",
       "transitions": [
         {
           "relationship-unique-id": "access-operator-uses-admin-portal",
@@ -571,13 +646,18 @@
           "description": "Credential management API requests HMAC secret generation and protection from MiniKMS."
         },
         {
-          "relationship-unique-id": "management-api-to-credential-record-store",
+          "relationship-unique-id": "mini-kms-to-mini-kms-audit-store",
           "sequence-number": 4,
+          "description": "MiniKMS records audit evidence of the protected secret-generation operation without storing plaintext material."
+        },
+        {
+          "relationship-unique-id": "management-api-to-credential-record-store",
+          "sequence-number": 5,
           "description": "Credential management API persists encrypted secret material and credential metadata."
         },
         {
           "relationship-unique-id": "management-api-to-audit-event-store",
-          "sequence-number": 5,
+          "sequence-number": 6,
           "description": "Credential management API records the credential issuance audit event."
         }
       ]
@@ -585,7 +665,7 @@
     {
       "unique-id": "rotate-hmac-credential-standard-flow",
       "name": "Rotate HMAC Credential (Standard)",
-      "description": "AccessOperator or AccessAdministrator rotates an HMAC credential with immediate cutover or a standard grace period up to 14 days using the portal, management API, MiniKMS, and persistence store.",
+      "description": "AccessOperator or AccessAdministrator rotates an HMAC credential with immediate cutover or a standard grace period up to 14 days using the portal, management API, remote MiniKMS, and persistence stores.",
       "transitions": [
         {
           "relationship-unique-id": "access-operator-uses-admin-portal",
@@ -603,13 +683,18 @@
           "description": "Credential management API requests new secret generation and protection from MiniKMS for the replacement credential."
         },
         {
-          "relationship-unique-id": "management-api-to-credential-record-store",
+          "relationship-unique-id": "mini-kms-to-mini-kms-audit-store",
           "sequence-number": 4,
+          "description": "MiniKMS records audit evidence of the protected secret-rotation operation."
+        },
+        {
+          "relationship-unique-id": "management-api-to-credential-record-store",
+          "sequence-number": 5,
           "description": "Credential management API persists replacement credential state and grace-period metadata when applicable."
         },
         {
           "relationship-unique-id": "management-api-to-audit-event-store",
-          "sequence-number": 5,
+          "sequence-number": 6,
           "description": "Credential management API records the rotation audit event for the standard-grace path."
         }
       ]
@@ -635,14 +720,58 @@
           "description": "Credential management API requests new secret generation and protection from MiniKMS for the replacement credential."
         },
         {
-          "relationship-unique-id": "management-api-to-credential-record-store",
+          "relationship-unique-id": "mini-kms-to-mini-kms-audit-store",
           "sequence-number": 4,
+          "description": "MiniKMS records audit evidence of the protected secret-rotation operation for the extended-grace path."
+        },
+        {
+          "relationship-unique-id": "management-api-to-credential-record-store",
+          "sequence-number": 5,
           "description": "Credential management API persists replacement credential state and extended grace-period metadata."
         },
         {
           "relationship-unique-id": "management-api-to-audit-event-store",
-          "sequence-number": 5,
+          "sequence-number": 6,
           "description": "Credential management API records audit evidence of the acting role and extended-grace reason."
+        }
+      ]
+    },
+    {
+      "unique-id": "manage-mini-kms-key-versions-flow",
+      "name": "Manage MiniKMS Key Versions",
+      "description": "AccessAdministrator performs internal MiniKMS key creation, activation, or retirement operations against the MiniKMS service, with persisted key-state and audit capture.",
+      "transitions": [
+        {
+          "relationship-unique-id": "access-administrator-to-mini-kms",
+          "sequence-number": 1,
+          "description": "AccessAdministrator submits an internal MiniKMS key-management request."
+        },
+        {
+          "relationship-unique-id": "mini-kms-to-mini-kms-key-store",
+          "sequence-number": 2,
+          "description": "MiniKMS persists key-version records and updates active or retired lifecycle state."
+        },
+        {
+          "relationship-unique-id": "mini-kms-to-mini-kms-audit-store",
+          "sequence-number": 3,
+          "description": "MiniKMS records the key-management audit event with actor, action, outcome, and target key version."
+        }
+      ]
+    },
+    {
+      "unique-id": "view-mini-kms-audit-flow",
+      "name": "View MiniKMS Audit Log",
+      "description": "AccessAdministrator reads MiniKMS operational audit records directly from the MiniKMS service for internal cryptographic governance.",
+      "transitions": [
+        {
+          "relationship-unique-id": "access-administrator-to-mini-kms",
+          "sequence-number": 1,
+          "description": "AccessAdministrator requests recent MiniKMS audit data."
+        },
+        {
+          "relationship-unique-id": "mini-kms-to-mini-kms-audit-store",
+          "sequence-number": 2,
+          "description": "MiniKMS reads persisted MiniKMS audit records from the MiniKMS audit store."
         }
       ]
     },

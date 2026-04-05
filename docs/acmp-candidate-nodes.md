@@ -13,7 +13,10 @@ Based only on the current requirements baseline, FRS, and technical specificatio
 | Embedded Identity Provider | `service` | Application-local identity component that authenticates administrative users from persisted records and issues bearer tokens for the management API. |
 | Protected Recipient Service | `service` | Internal protected service or business API that validates inbound HMAC requests and enforces credential scope/permission checks. |
 | Client Service | `service` | Internal client service that signs outbound HMAC requests when calling protected services. |
-| MiniKMS | `service` | Internal cryptographic component used for HMAC secret generation, envelope encryption, decryption, and key versioning. |
+| MiniKMS | `service` | Internal cryptographic service used for HMAC secret generation, envelope encryption, decryption, persisted key lifecycle management, and MiniKMS audit capture. |
+| MiniKMS State Persistence Store | `database` | MiniKMS persistence layer that may run in file-backed, SQL Server, PostgreSQL, or demo in-memory mode depending on deployment configuration. |
+| MiniKMS Key Store | `data-asset` | Logical data store for MiniKMS master-key versions, active-key tracking, and retired-key lifecycle state. |
+| MiniKMS Audit Store | `data-asset` | Logical data store for MiniKMS operational audit events such as key creation, activation, retirement, and secret-operation activity. |
 | Credential Persistence Store | `database` | SQL Server, PostgreSQL, or demo in-memory persistence layer that contains the platform's logical data stores. |
 | Credential Record Store | `data-asset` | Logical data store for service/client records, credential metadata, scopes, and HMAC detail records. |
 | Administrative Identity Store | `data-asset` | Logical data store for persisted admin users, password material, login metadata, and admin role assignments. |
@@ -36,7 +39,10 @@ These relationships are also based only on the current requirements baseline, FR
 | Credential Management API -> Credential Record Store | `connects` | The management API persists and reads service/client records, credential metadata, scopes, and HMAC details from the credential record store. |
 | Credential Management API -> Administrative Identity Store | `connects` | The management API persists and reads administrative users, password material, and admin role assignments from the administrative identity store. |
 | Credential Management API -> Audit Event Store | `connects` | The management API persists and reads audit events from the audit event store. |
-| Credential Management API -> MiniKMS | `connects` | The management API uses MiniKMS for HMAC secret generation, encryption, decryption, and related key-management operations. |
+| Credential Management API -> MiniKMS | `connects` | The management API uses the remote MiniKMS service for HMAC secret generation, encryption, decryption, and related key-management operations. |
+| AccessAdministrator -> MiniKMS | `connects` | AccessAdministrator may perform internal MiniKMS key lifecycle and audit operations directly against MiniKMS. |
+| MiniKMS -> MiniKMS Key Store | `connects` | MiniKMS persists and reads key-version records, active-key tracking, and retired-key lifecycle state. |
+| MiniKMS -> MiniKMS Audit Store | `connects` | MiniKMS persists and reads operational audit events for key and secret operations. |
 | Credential Management API -> Encrypted Credential Package | `connects` | The management API issues versioned recipient-side encrypted package envelopes for service-side validation scenarios. |
 | Credential Management API -> Encrypted Client Credential Package | `connects` | The management API issues versioned client-side encrypted package envelopes for outbound signing scenarios. |
 | Client Service -> Protected Recipient Service | `connects` | Client services send HMAC-signed outbound requests to protected recipient services. |
@@ -45,7 +51,8 @@ These relationships are also based only on the current requirements baseline, FR
 | Client Service -> Encrypted Client Credential Package | `connects` | The client-side signing library loads, decrypts, and validates a bound encrypted package envelope to sign outbound requests. |
 | Authentication Credential Management Platform -> Admin Web Portal, Credential Management API, Embedded Identity Provider | `composed-of` | At the shared platform level, the platform includes the admin portal, management API, and embedded identity component. |
 | Credential Persistence Store -> Credential Record Store, Administrative Identity Store, Audit Event Store | `composed-of` | The physical persistence layer contains separate logical stores for credential data, administrative identity data, and audit events. |
-| Authentication Credential Management Platform -> HMAC Provider Components | `composed-of` | At the HMAC provider level, the platform includes HMAC issuance, package issuance, signing, validation, and supporting runtime components. |
+| MiniKMS State Persistence Store -> MiniKMS Key Store, MiniKMS Audit Store | `composed-of` | The MiniKMS persistence layer contains separate logical stores for key lifecycle state and MiniKMS audit events. |
+| Authentication Credential Management Platform -> HMAC Provider Components | `composed-of` | At the HMAC provider level, the platform includes MiniKMS, MiniKMS state persistence, HMAC issuance, package issuance, signing, validation, and supporting runtime components. |
 
 ## Candidate CALM Flows
 
@@ -63,6 +70,8 @@ These flows represent business actions described by the current requirements bas
 | Issue HMAC Credential | AccessOperator or AccessAdministrator issues a new HMAC credential, including secret generation, protection, persistence, and one-time secret reveal. |
 | Rotate HMAC Credential (Standard) | AccessOperator or AccessAdministrator rotates an existing credential with immediate cutover or a grace period up to 14 days. |
 | Rotate HMAC Credential (Extended Grace) | AccessAdministrator rotates an existing credential with a grace period longer than 14 days up to 30 days, with explicit reason and audit traceability. |
+| Manage MiniKMS Key Versions | AccessAdministrator creates, activates, or retires MiniKMS key versions through the internal MiniKMS service, with persisted key-state and audit capture. |
+| View MiniKMS Audit Log | AccessAdministrator reads MiniKMS operational audit records for cryptographic governance and troubleshooting. |
 | Revoke HMAC Credential | AccessOperator or AccessAdministrator revokes a credential so future authentication attempts are rejected. |
 | Issue Encrypted Credential Package | AccessOperator or AccessAdministrator uses the admin portal and credential management API to issue a versioned recipient-side encrypted package envelope bound to the target protection context. |
 | Issue Encrypted Client Credential Package | AccessOperator or AccessAdministrator uses the admin portal and credential management API to issue a versioned client-side encrypted package envelope bound to the target protection context. |
@@ -120,22 +129,34 @@ These flows represent business actions described by the current requirements bas
 1. AccessOperator -> Admin Web Portal
 2. Admin Web Portal -> Credential Management API
 3. Credential Management API -> MiniKMS
-4. Credential Management API -> Credential Record Store
-5. Credential Management API -> Audit Event Store
+4. MiniKMS -> MiniKMS Audit Store
+5. Credential Management API -> Credential Record Store
+6. Credential Management API -> Audit Event Store
 
 #### Rotate HMAC Credential (Standard)
 1. AccessOperator -> Admin Web Portal
 2. Admin Web Portal -> Credential Management API
 3. Credential Management API -> MiniKMS
-4. Credential Management API -> Credential Record Store
-5. Credential Management API -> Audit Event Store
+4. MiniKMS -> MiniKMS Audit Store
+5. Credential Management API -> Credential Record Store
+6. Credential Management API -> Audit Event Store
 
 #### Rotate HMAC Credential (Extended Grace)
 1. AccessAdministrator -> Admin Web Portal
 2. Admin Web Portal -> Credential Management API
 3. Credential Management API -> MiniKMS
-4. Credential Management API -> Credential Record Store
-5. Credential Management API -> Audit Event Store
+4. MiniKMS -> MiniKMS Audit Store
+5. Credential Management API -> Credential Record Store
+6. Credential Management API -> Audit Event Store
+
+#### Manage MiniKMS Key Versions
+1. AccessAdministrator -> MiniKMS
+2. MiniKMS -> MiniKMS Key Store
+3. MiniKMS -> MiniKMS Audit Store
+
+#### View MiniKMS Audit Log
+1. AccessAdministrator -> MiniKMS
+2. MiniKMS -> MiniKMS Audit Store
 
 #### Revoke HMAC Credential
 1. AccessOperator -> Admin Web Portal
