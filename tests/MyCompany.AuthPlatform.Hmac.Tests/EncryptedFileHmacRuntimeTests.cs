@@ -151,6 +151,92 @@ public sealed class EncryptedFileHmacRuntimeTests
     }
 
     [Fact]
+    public async Task ClientSigner_And_ServiceValidator_RoundTripUsingExternalRsaPackages()
+    {
+        using var rsa = RSA.Create(3072);
+        using var tempDirectory = new TemporaryDirectory();
+        var protector = new X509HmacCredentialPackageProtector(new NoopCertificateResolver());
+        var reader = new X509HmacCredentialPackageReader(new NoopCertificateResolver());
+        var keyId = "key-uat-orders-0004-rsa";
+        var secret = new byte[] { 0x51, 0x61, 0x71, 0x81 };
+        var bindingId = Guid.NewGuid();
+        var bindingKeyId = "orders-api-prod-rsa";
+        var bindingKeyVersion = "2026q2";
+        var publicKeyPem = rsa.ExportSubjectPublicKeyInfoPem();
+        var publicKeyFingerprint = ComputePublicKeyFingerprint(rsa);
+        var privateKeyPath = await WritePrivateKeyPemAsync(tempDirectory.Path, rsa);
+        var packageReadOptions = new HmacCredentialPackageReadOptions(
+            ExpectedBindingId: bindingId,
+            ExpectedBindingType: RecipientProtectionBindingTypes.ExternalRsaPublicKey,
+            ExpectedBindingKeyId: bindingKeyId,
+            ExpectedBindingKeyVersion: bindingKeyVersion,
+            ExpectedPublicKeyFingerprint: publicKeyFingerprint,
+            ExternalRsaPrivateKeyPath: privateKeyPath);
+
+        await WritePackageAsync(
+            protector,
+            CreateExternalRsaServiceDefinition(publicKeyPem, publicKeyFingerprint, bindingId, bindingKeyId, bindingKeyVersion, keyId, "kms-v1", secret),
+            tempDirectory.Path);
+        await WritePackageAsync(
+            protector,
+            CreateExternalRsaClientDefinition(publicKeyPem, publicKeyFingerprint, bindingId, bindingKeyId, bindingKeyVersion, keyId, "kms-v1", secret),
+            tempDirectory.Path);
+
+        using var clientStore = new EncryptedFileClientCredentialStore(
+            new ClientPackageCacheOptions
+            {
+                PackageDirectory = tempDirectory.Path,
+                CacheTimeToLive = TimeSpan.FromMinutes(5),
+                PackageReadOptions = packageReadOptions
+            },
+            reader);
+        using var serviceStore = new EncryptedFileServiceCredentialStore(
+            new ServicePackageCacheOptions
+            {
+                PackageDirectory = tempDirectory.Path,
+                CacheTimeToLive = TimeSpan.FromMinutes(5),
+                PackageReadOptions = packageReadOptions
+            },
+            reader);
+
+        var signer = new HmacRequestSigner(clientStore);
+        var validator = new HmacRequestValidator(
+            serviceStore,
+            new HmacValidationOptions
+            {
+                AllowedClockSkew = TimeSpan.FromMinutes(5),
+                RequireNonce = true
+            });
+
+        var body = """{"orderId":321}"""u8.ToArray();
+        var signingResult = await signer.SignAsync(
+            keyId,
+            new HmacSigningRequest(
+                "POST",
+                "/api/orders/create",
+                "?mode=rsa",
+                body,
+                "kms-v1",
+                DateTimeOffset.UtcNow,
+                "nonce-rsa-123"));
+
+        var validationResult = await validator.ValidateAsync(
+            new HmacValidationRequest(
+                "POST",
+                "/api/orders/create",
+                "?mode=rsa",
+                body,
+                "kms-v1",
+                signingResult.Headers),
+            requiredScope: "orders.write");
+
+        Assert.True(validationResult.IsValid);
+        Assert.Null(validationResult.FailureCode);
+        Assert.Equal(keyId, validationResult.KeyId);
+        Assert.Equal("kms-v1", signingResult.KeyVersion);
+    }
+
+    [Fact]
     public async Task ServiceCredentialStore_RejectsUnexpectedKeyVersion()
     {
         using var certificate = CreateCertificate();
@@ -172,6 +258,42 @@ public sealed class EncryptedFileHmacRuntimeTests
 
         await Assert.ThrowsAsync<HmacCredentialPackageException>(() =>
             store.GetByKeyIdAsync("key-uat-orders-0005", "kms-v2"));
+    }
+
+    [Fact]
+    public async Task ServiceCredentialStore_RejectsUnexpectedExternalRsaBindingId()
+    {
+        using var rsa = RSA.Create(3072);
+        using var tempDirectory = new TemporaryDirectory();
+        var protector = new X509HmacCredentialPackageProtector(new NoopCertificateResolver());
+        var reader = new X509HmacCredentialPackageReader(new NoopCertificateResolver());
+        var keyId = "key-uat-orders-0005-rsa";
+        var bindingId = Guid.NewGuid();
+        var publicKeyPem = rsa.ExportSubjectPublicKeyInfoPem();
+        var publicKeyFingerprint = ComputePublicKeyFingerprint(rsa);
+        var privateKeyPath = await WritePrivateKeyPemAsync(tempDirectory.Path, rsa);
+        using var store = new EncryptedFileServiceCredentialStore(
+            new ServicePackageCacheOptions
+            {
+                PackageDirectory = tempDirectory.Path,
+                CacheTimeToLive = TimeSpan.FromMinutes(5),
+                PackageReadOptions = new HmacCredentialPackageReadOptions(
+                    ExpectedBindingId: Guid.NewGuid(),
+                    ExpectedBindingType: RecipientProtectionBindingTypes.ExternalRsaPublicKey,
+                    ExpectedBindingKeyId: "orders-api-prod-rsa",
+                    ExpectedBindingKeyVersion: "2026q2",
+                    ExpectedPublicKeyFingerprint: publicKeyFingerprint,
+                    ExternalRsaPrivateKeyPath: privateKeyPath)
+            },
+            reader);
+
+        await WritePackageAsync(
+            protector,
+            CreateExternalRsaServiceDefinition(publicKeyPem, publicKeyFingerprint, bindingId, "orders-api-prod-rsa", "2026q2", keyId, "kms-v1", [0x91, 0x92, 0x93, 0x94]),
+            tempDirectory.Path);
+
+        await Assert.ThrowsAsync<HmacCredentialPackageException>(() =>
+            store.GetByKeyIdAsync(keyId, "kms-v1"));
     }
 
     [Fact]
@@ -353,11 +475,99 @@ public sealed class EncryptedFileHmacRuntimeTests
             secret,
             "acmp-hmac-v1");
 
+    private static HmacCredentialPackageDefinition CreateExternalRsaServiceDefinition(
+        string publicKeyPem,
+        string publicKeyFingerprint,
+        Guid bindingId,
+        string bindingKeyId,
+        string bindingKeyVersion,
+        string keyId,
+        string keyVersion,
+        byte[] secret) =>
+        new(
+            CredentialPackageType.ServiceValidation,
+            $"pkg-{Guid.NewGuid():N}",
+            Guid.NewGuid(),
+            keyId,
+            keyVersion,
+            CredentialStatus.Active,
+            DeploymentEnvironment.Uat,
+            DateTimeOffset.UtcNow.AddDays(7),
+            DateTimeOffset.UtcNow,
+            new HmacCredentialPackageProtectionBinding(
+                BindingType: RecipientProtectionBindingTypes.ExternalRsaPublicKey,
+                BindingId: bindingId,
+                CertificateThumbprint: null,
+                StoreLocation: null,
+                StoreName: null,
+                CertificatePath: null,
+                PrivateKeyPath: null,
+                CertificatePem: null,
+                PublicKeyPem: publicKeyPem,
+                PublicKeyFingerprint: publicKeyFingerprint,
+                KeyId: bindingKeyId,
+                KeyVersion: bindingKeyVersion),
+            "HMACSHA256",
+            ["orders.read", "orders.write"],
+            secret,
+            null);
+
+    private static HmacCredentialPackageDefinition CreateExternalRsaClientDefinition(
+        string publicKeyPem,
+        string publicKeyFingerprint,
+        Guid bindingId,
+        string bindingKeyId,
+        string bindingKeyVersion,
+        string keyId,
+        string keyVersion,
+        byte[] secret) =>
+        new(
+            CredentialPackageType.ClientSigning,
+            $"pkg-{Guid.NewGuid():N}",
+            Guid.NewGuid(),
+            keyId,
+            keyVersion,
+            CredentialStatus.Active,
+            DeploymentEnvironment.Uat,
+            DateTimeOffset.UtcNow.AddDays(7),
+            DateTimeOffset.UtcNow,
+            new HmacCredentialPackageProtectionBinding(
+                BindingType: RecipientProtectionBindingTypes.ExternalRsaPublicKey,
+                BindingId: bindingId,
+                CertificateThumbprint: null,
+                StoreLocation: null,
+                StoreName: null,
+                CertificatePath: null,
+                PrivateKeyPath: null,
+                CertificatePem: null,
+                PublicKeyPem: publicKeyPem,
+                PublicKeyFingerprint: publicKeyFingerprint,
+                KeyId: bindingKeyId,
+                KeyVersion: bindingKeyVersion),
+            "HMACSHA256",
+            ["orders.read", "orders.write"],
+            secret,
+            "acmp-hmac-v1");
+
     private static X509Certificate2 CreateCertificate()
     {
         using var rsa = RSA.Create(2048);
         var request = new CertificateRequest("CN=acmp-hmac-runtime-test", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
         return request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(30));
+    }
+
+    private static async Task<string> WritePrivateKeyPemAsync(string directoryPath, RSA rsa)
+    {
+        var privateKeyPath = Path.Combine(directoryPath, $"binding-{Guid.NewGuid():N}.pem");
+        await File.WriteAllTextAsync(privateKeyPath, rsa.ExportPkcs8PrivateKeyPem());
+        return privateKeyPath;
+    }
+
+    private static string ComputePublicKeyFingerprint(RSA rsa)
+    {
+        var subjectPublicKeyInfo = rsa.ExportSubjectPublicKeyInfo();
+        var hash = SHA256.HashData(subjectPublicKeyInfo);
+        return $"SHA256:{Convert.ToBase64String(hash)}";
     }
 
     private sealed class FakeCertificateResolver : IX509CertificateResolver
@@ -370,6 +580,12 @@ public sealed class EncryptedFileHmacRuntimeTests
         }
 
         public X509Certificate2 Resolve(HmacCredentialPackageProtectionBinding protectionBinding) => _certificate;
+    }
+
+    private sealed class NoopCertificateResolver : IX509CertificateResolver
+    {
+        public X509Certificate2 Resolve(HmacCredentialPackageProtectionBinding protectionBinding) =>
+            throw new InvalidOperationException("This resolver should not be used for external RSA package bindings.");
     }
 
     private sealed class TemporaryDirectory : IDisposable

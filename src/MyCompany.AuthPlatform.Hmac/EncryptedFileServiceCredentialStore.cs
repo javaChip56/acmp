@@ -10,6 +10,8 @@ public sealed class ServicePackageCacheOptions
     public TimeSpan CacheTimeToLive { get; set; } = TimeSpan.FromMinutes(5);
 
     public IReadOnlyCollection<string> PreloadKeyIds { get; set; } = Array.Empty<string>();
+
+    public HmacCredentialPackageReadOptions? PackageReadOptions { get; set; }
 }
 
 public sealed class EncryptedFileServiceCredentialStore : IDisposable
@@ -70,7 +72,12 @@ public sealed class EncryptedFileServiceCredentialStore : IDisposable
 
         try
         {
-            var package = await _packageReader.ReadServiceValidationPackageAsync(packagePath, normalizedKeyId, expectedKeyVersion, cancellationToken);
+            var package = await _packageReader.ReadServiceValidationPackageAsync(
+                packagePath,
+                normalizedKeyId,
+                expectedKeyVersion,
+                _options.PackageReadOptions,
+                cancellationToken);
             var entry = new CacheEntry(
                 package,
                 File.Exists(packagePath) ? File.GetLastWriteTimeUtc(packagePath) : DateTime.UtcNow,

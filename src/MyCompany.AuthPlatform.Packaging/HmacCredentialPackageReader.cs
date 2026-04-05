@@ -43,18 +43,28 @@ public sealed record ClientSigningCredentialPackage(
     IReadOnlyList<string> Scopes,
     byte[] Secret);
 
+public sealed record HmacCredentialPackageReadOptions(
+    Guid? ExpectedBindingId,
+    string? ExpectedBindingType,
+    string? ExpectedBindingKeyId,
+    string? ExpectedBindingKeyVersion,
+    string? ExpectedPublicKeyFingerprint,
+    string? ExternalRsaPrivateKeyPath);
+
 public interface IHmacCredentialPackageReader
 {
     Task<ServiceValidationCredentialPackage> ReadServiceValidationPackageAsync(
         string packagePath,
         string expectedKeyId,
         string? expectedKeyVersion = null,
+        HmacCredentialPackageReadOptions? readOptions = null,
         CancellationToken cancellationToken = default);
 
     Task<ClientSigningCredentialPackage> ReadClientSigningPackageAsync(
         string packagePath,
         string expectedKeyId,
         string? expectedKeyVersion = null,
+        HmacCredentialPackageReadOptions? readOptions = null,
         CancellationToken cancellationToken = default);
 }
 
@@ -82,9 +92,10 @@ public sealed class X509HmacCredentialPackageReader : IHmacCredentialPackageRead
         string packagePath,
         string expectedKeyId,
         string? expectedKeyVersion = null,
+        HmacCredentialPackageReadOptions? readOptions = null,
         CancellationToken cancellationToken = default)
     {
-        var envelope = await ReadEnvelopeAsync(packagePath, expectedKeyId, expectedKeyVersion, ServiceValidationPackageType, cancellationToken);
+        var envelope = await ReadEnvelopeAsync(packagePath, expectedKeyId, expectedKeyVersion, readOptions, ServiceValidationPackageType, cancellationToken);
         var payload = DeserializePayload<ServicePayload>(envelope.PlaintextPayload);
         var secret = DecodeBase64(RequireText(payload.SecretBase64, "payload.secretBase64"), "payload.secretBase64");
         var scopes = NormalizeScopes(payload.Scopes);
@@ -106,9 +117,10 @@ public sealed class X509HmacCredentialPackageReader : IHmacCredentialPackageRead
         string packagePath,
         string expectedKeyId,
         string? expectedKeyVersion = null,
+        HmacCredentialPackageReadOptions? readOptions = null,
         CancellationToken cancellationToken = default)
     {
-        var envelope = await ReadEnvelopeAsync(packagePath, expectedKeyId, expectedKeyVersion, ClientSigningPackageType, cancellationToken);
+        var envelope = await ReadEnvelopeAsync(packagePath, expectedKeyId, expectedKeyVersion, readOptions, ClientSigningPackageType, cancellationToken);
         var payload = DeserializePayload<ClientPayload>(envelope.PlaintextPayload);
         var secret = DecodeBase64(RequireText(payload.SecretBase64, "payload.secretBase64"), "payload.secretBase64");
         var scopes = NormalizeScopes(payload.Scopes);
@@ -131,6 +143,7 @@ public sealed class X509HmacCredentialPackageReader : IHmacCredentialPackageRead
         string packagePath,
         string expectedKeyId,
         string? expectedKeyVersion,
+        HmacCredentialPackageReadOptions? readOptions,
         string expectedPackageType,
         CancellationToken cancellationToken)
     {
@@ -157,10 +170,8 @@ public sealed class X509HmacCredentialPackageReader : IHmacCredentialPackageRead
             throw new HmacCredentialPackageException("The package file is not valid JSON.", exception);
         }
 
-        ValidateEnvelope(envelope, expectedKeyId, expectedKeyVersion, expectedPackageType);
-        var certificate = ResolveCertificate(envelope.ProtectionBinding!);
-        using var privateKey = certificate.GetRSAPrivateKey()
-            ?? throw new HmacCredentialPackageException("The configured X.509 certificate does not provide an RSA private key.");
+        ValidateEnvelope(envelope, expectedKeyId, expectedKeyVersion, readOptions, expectedPackageType);
+        using var privateKey = ResolvePrivateKey(envelope.ProtectionBinding!, readOptions);
 
         var encryptedDataKey = DecodeBase64(
             RequireText(envelope.CryptoMetadata!.EncryptedDataKey, "cryptoMetadata.encryptedDataKey"),
@@ -213,18 +224,51 @@ public sealed class X509HmacCredentialPackageReader : IHmacCredentialPackageRead
         }
     }
 
-    private X509Certificate2 ResolveCertificate(ProtectionBinding binding)
+    private RSA ResolvePrivateKey(ProtectionBinding binding, HmacCredentialPackageReadOptions? readOptions)
     {
         var bindingType = RequireText(binding.BindingType, "protectionBinding.bindingType");
         if (string.Equals(bindingType, MyCompany.AuthPlatform.Application.RecipientProtectionBindingTypes.ExternalRsaPublicKey, StringComparison.Ordinal))
         {
-            throw new HmacCredentialPackageException("ExternalRsaPublicKey package bindings require a private-key runtime configuration path that is not yet supported by this reader.");
+            var privateKeyPath = NormalizeOptionalText(readOptions?.ExternalRsaPrivateKeyPath);
+            if (privateKeyPath is null)
+            {
+                throw new HmacCredentialPackageException("ExternalRsaPublicKey package bindings require a configured PEM private key path at runtime.");
+            }
+
+            if (!File.Exists(privateKeyPath))
+            {
+                throw new HmacCredentialPackageException($"The configured external RSA private key file '{privateKeyPath}' could not be found.");
+            }
+
+            try
+            {
+                var rsa = RSA.Create();
+                rsa.ImportFromPem(File.ReadAllText(privateKeyPath));
+                var packageFingerprint = RequireText(binding.PublicKeyFingerprint, "protectionBinding.publicKeyFingerprint");
+                var actualFingerprint = ComputePublicKeyFingerprint(rsa);
+
+                if (!string.Equals(actualFingerprint, packageFingerprint, StringComparison.Ordinal))
+                {
+                    rsa.Dispose();
+                    throw new HmacCredentialPackageException("The configured external RSA private key does not match the package public-key fingerprint.");
+                }
+
+                return rsa;
+            }
+            catch (HmacCredentialPackageException)
+            {
+                throw;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException or CryptographicException)
+            {
+                throw new HmacCredentialPackageException("The configured external RSA private key could not be loaded.", exception);
+            }
         }
 
         var normalizedThumbprint = NormalizeThumbprint(binding.CertificateThumbprint);
         var certificate = _certificateResolver.Resolve(new MyCompany.AuthPlatform.Application.HmacCredentialPackageProtectionBinding(
             bindingType,
-            BindingId: null,
+            BindingId: binding.BindingId,
             normalizedThumbprint,
             string.Equals(bindingType, MyCompany.AuthPlatform.Application.RecipientProtectionBindingTypes.X509StoreThumbprint, StringComparison.Ordinal)
                 ? RequireText(binding.StoreLocation, "protectionBinding.storeLocation")
@@ -240,19 +284,25 @@ public sealed class X509HmacCredentialPackageReader : IHmacCredentialPackageRead
                 : null,
             CertificatePem: null,
             PublicKeyPem: null,
-            PublicKeyFingerprint: null,
-            KeyId: null,
-            KeyVersion: null));
+            PublicKeyFingerprint: binding.PublicKeyFingerprint,
+            KeyId: binding.KeyId,
+            KeyVersion: binding.KeyVersion));
 
         if (!string.Equals(NormalizeThumbprint(certificate.Thumbprint), normalizedThumbprint, StringComparison.Ordinal))
         {
             throw new HmacCredentialPackageException("The resolved X.509 certificate does not match the package thumbprint binding.");
         }
 
-        return certificate;
+        return certificate.GetRSAPrivateKey()
+            ?? throw new HmacCredentialPackageException("The configured X.509 certificate does not provide an RSA private key.");
     }
 
-    private static void ValidateEnvelope(Envelope envelope, string expectedKeyId, string? expectedKeyVersion, string expectedPackageType)
+    private static void ValidateEnvelope(
+        Envelope envelope,
+        string expectedKeyId,
+        string? expectedKeyVersion,
+        HmacCredentialPackageReadOptions? readOptions,
+        string expectedPackageType)
     {
         if (!string.Equals(envelope.SchemaVersion, SupportedSchemaVersion, StringComparison.Ordinal))
         {
@@ -294,6 +344,8 @@ public sealed class X509HmacCredentialPackageReader : IHmacCredentialPackageRead
             throw new HmacCredentialPackageException("The package protection binding is missing.");
         }
 
+        ValidateProtectionBinding(envelope.ProtectionBinding, readOptions);
+
         if (envelope.CryptoMetadata is null)
         {
             throw new HmacCredentialPackageException("The package crypto metadata is missing.");
@@ -307,6 +359,45 @@ public sealed class X509HmacCredentialPackageReader : IHmacCredentialPackageRead
         if (!string.Equals(envelope.CryptoMetadata.KeyEncryptionAlgorithm, KeyEncryptionAlgorithm, StringComparison.Ordinal))
         {
             throw new HmacCredentialPackageException("The package key-encryption algorithm is not supported.");
+        }
+    }
+
+    private static void ValidateProtectionBinding(ProtectionBinding binding, HmacCredentialPackageReadOptions? readOptions)
+    {
+        if (readOptions is null)
+        {
+            return;
+        }
+
+        var bindingType = RequireText(binding.BindingType, "protectionBinding.bindingType");
+        if (!string.IsNullOrWhiteSpace(readOptions.ExpectedBindingType) &&
+            !string.Equals(bindingType, readOptions.ExpectedBindingType.Trim(), StringComparison.Ordinal))
+        {
+            throw new HmacCredentialPackageException("The package binding type does not match the configured runtime binding type.");
+        }
+
+        if (readOptions.ExpectedBindingId.HasValue &&
+            binding.BindingId != readOptions.ExpectedBindingId)
+        {
+            throw new HmacCredentialPackageException("The package binding identifier does not match the configured runtime binding.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(readOptions.ExpectedBindingKeyId) &&
+            !string.Equals(binding.KeyId, readOptions.ExpectedBindingKeyId.Trim(), StringComparison.Ordinal))
+        {
+            throw new HmacCredentialPackageException("The package binding key identifier does not match the configured runtime binding.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(readOptions.ExpectedBindingKeyVersion) &&
+            !string.Equals(binding.KeyVersion, readOptions.ExpectedBindingKeyVersion.Trim(), StringComparison.Ordinal))
+        {
+            throw new HmacCredentialPackageException("The package binding key version does not match the configured runtime binding.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(readOptions.ExpectedPublicKeyFingerprint) &&
+            !string.Equals(binding.PublicKeyFingerprint, readOptions.ExpectedPublicKeyFingerprint.Trim(), StringComparison.Ordinal))
+        {
+            throw new HmacCredentialPackageException("The package binding public-key fingerprint does not match the configured runtime binding.");
         }
     }
 
@@ -355,6 +446,13 @@ public sealed class X509HmacCredentialPackageReader : IHmacCredentialPackageRead
     private static string NormalizeThumbprint(string? thumbprint) =>
         string.Concat((thumbprint ?? string.Empty).Where(ch => !char.IsWhiteSpace(ch))).ToUpperInvariant();
 
+    private static string ComputePublicKeyFingerprint(RSA rsa)
+    {
+        var subjectPublicKeyInfo = rsa.ExportSubjectPublicKeyInfo();
+        var hash = SHA256.HashData(subjectPublicKeyInfo);
+        return $"SHA256:{Convert.ToBase64String(hash)}";
+    }
+
     private sealed record ValidatedEnvelope(Envelope Envelope, byte[] PlaintextPayload);
 
     private sealed class Envelope
@@ -392,6 +490,8 @@ public sealed class X509HmacCredentialPackageReader : IHmacCredentialPackageRead
     {
         public string? BindingType { get; set; }
 
+        public Guid? BindingId { get; set; }
+
         public string? CertificateThumbprint { get; set; }
 
         public string? StoreLocation { get; set; }
@@ -401,6 +501,12 @@ public sealed class X509HmacCredentialPackageReader : IHmacCredentialPackageRead
         public string? CertificatePath { get; set; }
 
         public string? PrivateKeyPath { get; set; }
+
+        public string? PublicKeyFingerprint { get; set; }
+
+        public string? KeyId { get; set; }
+
+        public string? KeyVersion { get; set; }
     }
 
     private sealed class CryptoMetadata
