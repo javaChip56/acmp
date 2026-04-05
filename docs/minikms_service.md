@@ -20,8 +20,10 @@ The service uses the `MiniKms` config section in [appsettings.json](/d:/Research
 ```json
 {
   "MiniKms": {
+    "DemoModeEnabled": false,
     "ServiceApiKey": "dev-minikms-api-key",
     "ActiveKeyVersion": "kms-v1",
+    "StateFilePath": "App_Data/minikms-state.json",
     "MasterKeys": {
       "kms-v1": "QWNtcFNlY3JldE1hc3RlcktleUZvckttc3YxIUFCQ0Q="
     }
@@ -44,6 +46,8 @@ Internal endpoints:
 The internal endpoints require the `X-MiniKms-Api-Key` header.
 They also accept an optional `X-MiniKms-Actor` header for audit attribution.
 
+By default, the MiniKMS service now persists its key-ring state and audit trail to the configured `StateFilePath`. If `DemoModeEnabled` is set to `true`, the service switches to in-memory state instead.
+
 ## Local split-process startup
 
 Development launch profiles now line up by default:
@@ -59,6 +63,13 @@ dotnet run --project .\src\MyCompany.AuthPlatform.Api --launch-profile https-rem
 ```
 
 That starts the API in remote MiniKMS mode while keeping the API and key-management process split.
+
+If you want an ephemeral demo-only MiniKMS process, set:
+
+```powershell
+$env:MiniKms__DemoModeEnabled = "true"
+dotnet run --project .\src\MyCompany.Security.MiniKms --launch-profile https
+```
 
 ## Point the main API at the MiniKMS service
 
@@ -139,5 +150,6 @@ Invoke-RestMethod `
 
 - `ActiveKeyVersion` remains explicit in the API config so the host can expose it in `/health` and use it as the default key version for new secrets.
 - `MasterKeys` are only used by the local provider path in the main API. In remote mode, the actual wrapping keys live in the MiniKMS service process.
+- In normal mode, MiniKMS persists key-ring state and audit history to `StateFilePath`. In demo mode, the same behavior stays available but is held only in memory for the lifetime of the process.
 - MiniKMS key states are currently `Active`, `Available`, and `Retired`. Retired keys are decrypt-only.
 - Future implementations such as Windows Certificate Store or DPAPI-backed providers can still be added without changing the application-layer contracts.

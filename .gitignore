@@ -19,3 +19,4 @@
 **/obj/
 tmp-package-smoke.stderr.log
 tmp-package-smoke.stdout.log
+src/MyCompany.Security.MiniKms/App_Data/

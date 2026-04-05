@@ -15,45 +15,32 @@ internal interface IRotatingMasterKeyProvider : IMasterKeyProvider
     MiniKmsKeyVersionSummary RetireKeyVersion(string keyVersion);
 }
 
-internal sealed class RotatingMasterKeyProvider : IRotatingMasterKeyProvider
+internal interface IMiniKmsAuditLog
 {
+    void Write(string action, string outcome, string actor, string? keyVersion, string details);
+
+    IReadOnlyList<MiniKmsAuditEntry> List(int take);
+}
+
+internal sealed class RotatingMasterKeyProvider : IRotatingMasterKeyProvider, IMiniKmsAuditLog
+{
+    private const int MaxAuditEntries = 500;
+
     private readonly object _sync = new();
-    private readonly Dictionary<string, KeyRecord> _keyRecords;
-    private string _activeKeyVersion;
+    private readonly IMiniKmsStateStore _stateStore;
+    private MiniKmsStateSnapshot _snapshot;
 
-    public RotatingMasterKeyProvider(
-        IReadOnlyDictionary<string, byte[]> masterKeys,
-        string activeKeyVersion)
+    public RotatingMasterKeyProvider(IMiniKmsStateStore stateStore)
     {
-        if (masterKeys is null || masterKeys.Count == 0)
-        {
-            throw new ArgumentException("At least one MiniKMS master key must be configured.", nameof(masterKeys));
-        }
-
-        if (string.IsNullOrWhiteSpace(activeKeyVersion))
-        {
-            throw new ArgumentException("An active MiniKMS key version is required.", nameof(activeKeyVersion));
-        }
-
-        _activeKeyVersion = activeKeyVersion.Trim();
-        _keyRecords = masterKeys.ToDictionary(
-            pair => pair.Key,
-            pair => new KeyRecord(pair.Value, DateTimeOffset.UtcNow, null, null),
-            StringComparer.Ordinal);
-
-        if (!_keyRecords.ContainsKey(_activeKeyVersion))
-        {
-            throw new InvalidOperationException($"No MiniKMS master key is configured for active key version '{_activeKeyVersion}'.");
-        }
-
-        _keyRecords[_activeKeyVersion] = _keyRecords[_activeKeyVersion] with { ActivatedAt = DateTimeOffset.UtcNow };
+        _stateStore = stateStore ?? throw new ArgumentNullException(nameof(stateStore));
+        _snapshot = _stateStore.Load();
     }
 
     public string GetActiveKeyVersion()
     {
         lock (_sync)
         {
-            return _activeKeyVersion;
+            return _snapshot.ActiveKeyVersion;
         }
     }
 
@@ -71,12 +58,12 @@ internal sealed class RotatingMasterKeyProvider : IRotatingMasterKeyProvider
     {
         lock (_sync)
         {
-            return _keyRecords
+            return _snapshot.KeyRecords
                 .OrderBy(pair => pair.Key, StringComparer.Ordinal)
                 .Select(pair => new MiniKmsKeyVersionSummary(
                     pair.Key,
                     ResolveStatus(pair.Key, pair.Value),
-                    string.Equals(pair.Key, _activeKeyVersion, StringComparison.Ordinal),
+                    string.Equals(pair.Key, _snapshot.ActiveKeyVersion, StringComparison.Ordinal),
                     pair.Value.CreatedAt,
                     pair.Value.ActivatedAt,
                     pair.Value.RetiredAt))
@@ -98,13 +85,13 @@ internal sealed class RotatingMasterKeyProvider : IRotatingMasterKeyProvider
 
         lock (_sync)
         {
-            if (_keyRecords.ContainsKey(resolvedKeyVersion))
+            if (_snapshot.KeyRecords.ContainsKey(resolvedKeyVersion))
             {
                 throw new InvalidOperationException($"MiniKMS key version '{resolvedKeyVersion}' already exists.");
             }
 
             var now = DateTimeOffset.UtcNow;
-            _keyRecords[resolvedKeyVersion] = new KeyRecord(
+            _snapshot.KeyRecords[resolvedKeyVersion] = new MiniKmsKeyRecord(
                 resolvedMasterKey.ToArray(),
                 now,
                 activate ? now : null,
@@ -112,8 +99,9 @@ internal sealed class RotatingMasterKeyProvider : IRotatingMasterKeyProvider
             if (activate)
             {
                 RetireCurrentActiveKey(now);
-                _activeKeyVersion = resolvedKeyVersion;
+                _snapshot = _snapshot with { ActiveKeyVersion = resolvedKeyVersion };
             }
+            SaveSnapshot();
 
             return new MiniKmsKeyVersionSummary(
                 resolvedKeyVersion,
@@ -133,19 +121,20 @@ internal sealed class RotatingMasterKeyProvider : IRotatingMasterKeyProvider
 
         lock (_sync)
         {
-            if (!_keyRecords.TryGetValue(resolvedKeyVersion, out var record))
+            if (!_snapshot.KeyRecords.TryGetValue(resolvedKeyVersion, out var record))
             {
                 throw new InvalidOperationException($"MiniKMS key version '{resolvedKeyVersion}' does not exist.");
             }
 
             var now = DateTimeOffset.UtcNow;
             RetireCurrentActiveKey(now);
-            _activeKeyVersion = resolvedKeyVersion;
-            _keyRecords[resolvedKeyVersion] = record with
+            _snapshot = _snapshot with { ActiveKeyVersion = resolvedKeyVersion };
+            _snapshot.KeyRecords[resolvedKeyVersion] = record with
             {
                 ActivatedAt = now,
                 RetiredAt = null
             };
+            SaveSnapshot();
             return new MiniKmsKeyVersionSummary(
                 resolvedKeyVersion,
                 "Active",
@@ -164,19 +153,20 @@ internal sealed class RotatingMasterKeyProvider : IRotatingMasterKeyProvider
 
         lock (_sync)
         {
-            if (!_keyRecords.TryGetValue(resolvedKeyVersion, out var record))
+            if (!_snapshot.KeyRecords.TryGetValue(resolvedKeyVersion, out var record))
             {
                 throw new InvalidOperationException($"MiniKMS key version '{resolvedKeyVersion}' does not exist.");
             }
 
-            if (string.Equals(resolvedKeyVersion, _activeKeyVersion, StringComparison.Ordinal))
+            if (string.Equals(resolvedKeyVersion, _snapshot.ActiveKeyVersion, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException("The active MiniKMS key version cannot be retired directly. Activate a replacement key first.");
             }
 
             var now = DateTimeOffset.UtcNow;
             var retiredRecord = record with { RetiredAt = now };
-            _keyRecords[resolvedKeyVersion] = retiredRecord;
+            _snapshot.KeyRecords[resolvedKeyVersion] = retiredRecord;
+            SaveSnapshot();
             return new MiniKmsKeyVersionSummary(
                 resolvedKeyVersion,
                 "Retired",
@@ -187,30 +177,62 @@ internal sealed class RotatingMasterKeyProvider : IRotatingMasterKeyProvider
         }
     }
 
+    public void Write(string action, string outcome, string actor, string? keyVersion, string details)
+    {
+        var entry = new MiniKmsAuditEntry(
+            Guid.NewGuid().ToString("N"),
+            DateTimeOffset.UtcNow,
+            action,
+            outcome,
+            string.IsNullOrWhiteSpace(actor) ? "system" : actor.Trim(),
+            string.IsNullOrWhiteSpace(keyVersion) ? null : keyVersion.Trim(),
+            details);
+
+        lock (_sync)
+        {
+            _snapshot.AuditEntries.Insert(0, entry);
+            if (_snapshot.AuditEntries.Count > MaxAuditEntries)
+            {
+                _snapshot.AuditEntries.RemoveRange(MaxAuditEntries, _snapshot.AuditEntries.Count - MaxAuditEntries);
+            }
+
+            SaveSnapshot();
+        }
+    }
+
+    public IReadOnlyList<MiniKmsAuditEntry> List(int take)
+    {
+        var boundedTake = take <= 0 ? 50 : Math.Min(take, 200);
+        lock (_sync)
+        {
+            return _snapshot.AuditEntries.Take(boundedTake).Select(entry => entry with { }).ToArray();
+        }
+    }
+
     private ConfiguredMasterKeyProvider CreateSnapshot()
     {
         lock (_sync)
         {
             return new ConfiguredMasterKeyProvider(
-                _keyRecords.ToDictionary(
+                _snapshot.KeyRecords.ToDictionary(
                     pair => pair.Key,
                     pair => pair.Value.MasterKey.ToArray(),
                     StringComparer.Ordinal),
-                _activeKeyVersion);
+                _snapshot.ActiveKeyVersion);
         }
     }
 
     private void RetireCurrentActiveKey(DateTimeOffset retiredAt)
     {
-        if (_keyRecords.TryGetValue(_activeKeyVersion, out var currentRecord))
+        if (_snapshot.KeyRecords.TryGetValue(_snapshot.ActiveKeyVersion, out var currentRecord))
         {
-            _keyRecords[_activeKeyVersion] = currentRecord with { RetiredAt = retiredAt };
+            _snapshot.KeyRecords[_snapshot.ActiveKeyVersion] = currentRecord with { RetiredAt = retiredAt };
         }
     }
 
-    private string ResolveStatus(string keyVersion, KeyRecord record)
+    private string ResolveStatus(string keyVersion, MiniKmsKeyRecord record)
     {
-        if (string.Equals(keyVersion, _activeKeyVersion, StringComparison.Ordinal))
+        if (string.Equals(keyVersion, _snapshot.ActiveKeyVersion, StringComparison.Ordinal))
         {
             return "Active";
         }
@@ -218,9 +240,8 @@ internal sealed class RotatingMasterKeyProvider : IRotatingMasterKeyProvider
         return record.RetiredAt.HasValue ? "Retired" : "Available";
     }
 
-    private sealed record KeyRecord(
-        byte[] MasterKey,
-        DateTimeOffset CreatedAt,
-        DateTimeOffset? ActivatedAt,
-        DateTimeOffset? RetiredAt);
+    private void SaveSnapshot()
+    {
+        _stateStore.Save(_snapshot);
+    }
 }

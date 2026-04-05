@@ -12,7 +12,7 @@ builder.Services.Configure<MiniKmsServiceOptions>(
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddSingleton<IRotatingMasterKeyProvider>(serviceProvider =>
+builder.Services.AddSingleton<IMiniKmsStateStore>(serviceProvider =>
 {
     var options = serviceProvider.GetRequiredService<IOptions<MiniKmsServiceOptions>>().Value;
     if (string.IsNullOrWhiteSpace(options.ServiceApiKey))
@@ -24,12 +24,29 @@ builder.Services.AddSingleton<IRotatingMasterKeyProvider>(serviceProvider =>
         pair => pair.Key,
         pair => Convert.FromBase64String(pair.Value),
         StringComparer.Ordinal);
-    return new RotatingMasterKeyProvider(keys, options.ActiveKeyVersion);
+    var now = DateTimeOffset.UtcNow;
+    var bootstrapSnapshot = new MiniKmsStateSnapshot(
+        options.ActiveKeyVersion,
+        keys.ToDictionary(
+            pair => pair.Key,
+            pair => new MiniKmsKeyRecord(
+                pair.Value.ToArray(),
+                now,
+                string.Equals(pair.Key, options.ActiveKeyVersion, StringComparison.Ordinal) ? now : null,
+                null),
+            StringComparer.Ordinal),
+        []);
+
+    return options.DemoModeEnabled
+        ? new InMemoryMiniKmsStateStore(bootstrapSnapshot)
+        : new FileMiniKmsStateStore(options.StateFilePath, bootstrapSnapshot);
 });
+builder.Services.AddSingleton<IRotatingMasterKeyProvider, RotatingMasterKeyProvider>();
 builder.Services.AddSingleton<IMasterKeyProvider>(serviceProvider =>
     serviceProvider.GetRequiredService<IRotatingMasterKeyProvider>());
 builder.Services.AddSingleton<IMiniKms, LocalMiniKms>();
-builder.Services.AddSingleton<IMiniKmsAuditLog, InMemoryMiniKmsAuditLog>();
+builder.Services.AddSingleton<IMiniKmsAuditLog>(serviceProvider =>
+    (IMiniKmsAuditLog)serviceProvider.GetRequiredService<IRotatingMasterKeyProvider>());
 
 var app = builder.Build();
 
@@ -49,8 +66,8 @@ var auditLog = app.Services.GetRequiredService<IMiniKmsAuditLog>();
 app.MapGet("/health", () =>
 {
     return TypedResults.Ok(new MiniKmsHealthResponse(
-        "Healthy",
-        miniKms.ProviderName,
+        options.DemoModeEnabled ? "Healthy (Demo Mode)" : "Healthy",
+        $"{miniKms.ProviderName}/{app.Services.GetRequiredService<IMiniKmsStateStore>().ProviderName}",
         miniKms.ActiveKeyVersion));
 })
 .WithName("GetMiniKmsHealth")

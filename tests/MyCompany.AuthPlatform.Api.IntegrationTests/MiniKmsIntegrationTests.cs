@@ -165,20 +165,133 @@ public sealed class MiniKmsIntegrationTests
         Assert.Equal(HttpStatusCode.Conflict, retireResponse.StatusCode);
     }
 
+    [Fact]
+    public async Task FileBackedMiniKmsState_PersistsAcrossFactoryRestart()
+    {
+        var stateFilePath = Path.Combine(Path.GetTempPath(), $"acmp-minikms-{Guid.NewGuid():N}.json");
+
+        try
+        {
+            using (var firstFactory = new MiniKmsFactory(stateFilePath: stateFilePath))
+            using (var firstClient = firstFactory.CreateClient())
+            {
+                var createRequest = new HttpRequestMessage(HttpMethod.Post, "/internal/minikms/keys")
+                {
+                    Content = JsonContent.Create(new CreateKeyVersionRequest("kms-v3", null, true))
+                };
+                createRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+                var createResponse = await firstClient.SendAsync(createRequest);
+                createResponse.EnsureSuccessStatusCode();
+            }
+
+            using var secondFactory = new MiniKmsFactory(stateFilePath: stateFilePath);
+            using var secondClient = secondFactory.CreateClient();
+
+            var keysRequest = new HttpRequestMessage(HttpMethod.Get, "/internal/minikms/keys");
+            keysRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+            var keysResponse = await secondClient.SendAsync(keysRequest);
+            keysResponse.EnsureSuccessStatusCode();
+            var keys = await keysResponse.Content.ReadFromJsonAsync<MiniKmsKeyVersionSummary[]>();
+
+            var health = await secondClient.GetFromJsonAsync<MiniKmsHealthResponse>("/health");
+
+            Assert.NotNull(keys);
+            Assert.Contains(keys!, key => key.KeyVersion == "kms-v3" && key.IsActive);
+            Assert.Equal("kms-v3", health?.ActiveKeyVersion);
+            Assert.Contains("/File", health?.ProviderName);
+        }
+        finally
+        {
+            if (File.Exists(stateFilePath))
+            {
+                File.Delete(stateFilePath);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task DemoModeMiniKmsState_RemainsInMemoryAcrossFactoryRestart()
+    {
+        using (var firstFactory = new MiniKmsFactory(demoModeEnabled: true))
+        using (var firstClient = firstFactory.CreateClient())
+        {
+            var createRequest = new HttpRequestMessage(HttpMethod.Post, "/internal/minikms/keys")
+            {
+                Content = JsonContent.Create(new CreateKeyVersionRequest("kms-demo-2", null, true))
+            };
+            createRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+            var createResponse = await firstClient.SendAsync(createRequest);
+            createResponse.EnsureSuccessStatusCode();
+        }
+
+        using var secondFactory = new MiniKmsFactory(demoModeEnabled: true);
+        using var secondClient = secondFactory.CreateClient();
+
+        var keysRequest = new HttpRequestMessage(HttpMethod.Get, "/internal/minikms/keys");
+        keysRequest.Headers.TryAddWithoutValidation(RemoteMiniKmsClient.ApiKeyHeaderName, "integration-test-api-key");
+        var keysResponse = await secondClient.SendAsync(keysRequest);
+        keysResponse.EnsureSuccessStatusCode();
+        var keys = await keysResponse.Content.ReadFromJsonAsync<MiniKmsKeyVersionSummary[]>();
+
+        var health = await secondClient.GetFromJsonAsync<MiniKmsHealthResponse>("/health");
+
+        Assert.NotNull(keys);
+        Assert.DoesNotContain(keys!, key => key.KeyVersion == "kms-demo-2");
+        Assert.Equal("kms-v1", health?.ActiveKeyVersion);
+        Assert.Contains("/InMemoryDemo", health?.ProviderName);
+    }
+
     private sealed class MiniKmsFactory : WebApplicationFactory<MiniKmsEntryPoint>
     {
+        private readonly string? _stateFilePath;
+        private readonly bool _demoModeEnabled;
+        private readonly bool _ownsStateFilePath;
+
+        public MiniKmsFactory(string? stateFilePath = null, bool demoModeEnabled = false)
+        {
+            _demoModeEnabled = demoModeEnabled;
+            if (!demoModeEnabled && string.IsNullOrWhiteSpace(stateFilePath))
+            {
+                _stateFilePath = Path.Combine(Path.GetTempPath(), $"acmp-minikms-test-{Guid.NewGuid():N}.json");
+                _ownsStateFilePath = true;
+            }
+            else
+            {
+                _stateFilePath = stateFilePath;
+                _ownsStateFilePath = false;
+            }
+        }
+
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Development");
             builder.ConfigureAppConfiguration((_, configBuilder) =>
             {
-                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                var overrides = new Dictionary<string, string?>
                 {
                     ["MiniKms:ServiceApiKey"] = "integration-test-api-key",
+                    ["MiniKms:DemoModeEnabled"] = _demoModeEnabled.ToString(),
                     ["MiniKms:ActiveKeyVersion"] = "kms-v1",
                     ["MiniKms:MasterKeys:kms-v1"] = "QWNtcFNlY3JldE1hc3RlcktleUZvckttc3YxIUFCQ0Q="
-                });
+                };
+
+                if (!string.IsNullOrWhiteSpace(_stateFilePath))
+                {
+                    overrides["MiniKms:StateFilePath"] = _stateFilePath;
+                }
+
+                configBuilder.AddInMemoryCollection(overrides);
             });
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+
+            if (disposing && _ownsStateFilePath && !string.IsNullOrWhiteSpace(_stateFilePath) && File.Exists(_stateFilePath))
+            {
+                File.Delete(_stateFilePath);
+            }
         }
     }
 
