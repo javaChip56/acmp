@@ -211,6 +211,8 @@ Tagged releases (`v*`) now publish two main GitHub release assets:
 
 Use the offline bundle when the target host should not need internet access to start the stack.
 
+If you want to rehearse the packaging flow before creating a real tag, run the `Release Dry Run` GitHub Actions workflow manually. For a real publish, create and push a `v*` tag from `main`.
+
 Run the sample recipient host:
 
 ```powershell

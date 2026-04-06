@@ -1,0 +1,104 @@
+name: Release Dry Run
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: Release version label to use for dry-run artifacts
+        required: true
+        default: v0.0.0-dryrun
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  dry-run:
+    name: Release Dry Run
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore ./Acmp.sln
+
+      - name: Build
+        run: dotnet build ./Acmp.sln --configuration Release --no-restore -warnaserror
+
+      - name: Test
+        run: dotnet test ./Acmp.sln --configuration Release --no-build --logger "trx;LogFileName=release-dry-run-test-results.trx" --results-directory ./artifacts/test-results
+
+      - name: Publish API
+        run: dotnet publish ./src/MyCompany.AuthPlatform.Api/MyCompany.AuthPlatform.Api.csproj --configuration Release --no-build --output ./artifacts/publish/api
+
+      - name: Package API artifact
+        shell: bash
+        run: |
+          mkdir -p ./artifacts/release
+          tar -czf "./artifacts/release/acmp-api-${{ inputs.release_version }}.tar.gz" -C ./artifacts/publish/api .
+
+      - name: Build offline Docker images
+        shell: pwsh
+        run: ./deploy/scripts/export-offline-images.ps1 -ApiImage "acmp-api:${{ inputs.release_version }}" -MiniKmsImage "acmp-minikms:${{ inputs.release_version }}" -OutputDirectory ".\deploy\artifacts"
+
+      - name: Package offline deployment bundle
+        shell: bash
+        run: |
+          mkdir -p ./artifacts/release/offline-bundle
+          cp ./deploy/docker-compose.offline.yml ./artifacts/release/offline-bundle/
+          cp ./deploy/.env.offline.example ./artifacts/release/offline-bundle/
+          cp ./deploy/.env.example ./artifacts/release/offline-bundle/
+          cp ./deploy/scripts/import-offline-images.ps1 ./artifacts/release/offline-bundle/
+          cp ./docs/offline_deployment.md ./artifacts/release/offline-bundle/
+          cp ./docs/local_deployment.md ./artifacts/release/offline-bundle/
+          cp ./docs/release_checklist.md ./artifacts/release/offline-bundle/
+          cp ./deploy/artifacts/acmp-api-offline.tar ./artifacts/release/offline-bundle/
+          cp ./deploy/artifacts/acmp-minikms-offline.tar ./artifacts/release/offline-bundle/
+          cp ./deploy/artifacts/postgres-16.tar ./artifacts/release/offline-bundle/
+          tar -czf "./artifacts/release/acmp-offline-bundle-${{ inputs.release_version }}.tar.gz" -C ./artifacts/release/offline-bundle .
+
+      - name: Render release notes preview
+        shell: bash
+        run: |
+          mkdir -p ./artifacts/release
+          checklist_url="https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_SHA}/docs/release_checklist.md"
+          local_deployment_url="https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_SHA}/docs/local_deployment.md"
+          offline_deployment_url="https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_SHA}/docs/offline_deployment.md"
+          sed \
+            -e "s|{{RELEASE_CHECKLIST_URL}}|${checklist_url}|g" \
+            -e "s|{{LOCAL_DEPLOYMENT_URL}}|${local_deployment_url}|g" \
+            -e "s|{{OFFLINE_DEPLOYMENT_URL}}|${offline_deployment_url}|g" \
+            ./.github/release-notes-intro.md > ./artifacts/release/release-notes-preview.md
+
+      - name: Upload API artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: acmp-api-${{ inputs.release_version }}-dry-run
+          path: artifacts/release/acmp-api-${{ inputs.release_version }}.tar.gz
+          if-no-files-found: error
+
+      - name: Upload offline bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: acmp-offline-bundle-${{ inputs.release_version }}-dry-run
+          path: artifacts/release/acmp-offline-bundle-${{ inputs.release_version }}.tar.gz
+          if-no-files-found: error
+
+      - name: Upload release notes preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: acmp-release-notes-preview-${{ inputs.release_version }}-dry-run
+          path: artifacts/release/release-notes-preview.md
+          if-no-files-found: error

@@ -2,6 +2,27 @@
 
 This checklist is for operators or release owners preparing to use a tagged ACMP release.
 
+## 0. Trigger The Right Pipeline
+
+Use one of these two paths:
+
+- Dry run
+  Trigger the `Release Dry Run` GitHub Actions workflow manually and provide a version label such as `v1.2.0-dryrun`.
+  Use this when you want to verify the release packaging flow without creating a real GitHub release.
+
+- Real release
+  Create and push a real `v*` tag from a commit that is already on `main`.
+  Example:
+
+```powershell
+git checkout main
+git pull
+git tag v1.2.0
+git push origin v1.2.0
+```
+
+The real publish workflow will then build the release assets, create or update the GitHub release, and attach the release artifacts.
+
 ## 1. Pick The Right Release Asset
 
 Use the GitHub release asset that matches the deployment style:
