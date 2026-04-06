@@ -88,6 +88,19 @@ jobs:
           path: artifacts/release/acmp-offline-bundle-${{ github.ref_name }}.tar.gz
           if-no-files-found: error
 
+      - name: Render release notes intro
+        shell: bash
+        run: |
+          mkdir -p ./artifacts/release
+          checklist_url="https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/docs/release_checklist.md"
+          local_deployment_url="https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/docs/local_deployment.md"
+          offline_deployment_url="https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/docs/offline_deployment.md"
+          sed \
+            -e "s|{{RELEASE_CHECKLIST_URL}}|${checklist_url}|g" \
+            -e "s|{{LOCAL_DEPLOYMENT_URL}}|${local_deployment_url}|g" \
+            -e "s|{{OFFLINE_DEPLOYMENT_URL}}|${offline_deployment_url}|g" \
+            ./.github/release-notes-intro.md > ./artifacts/release/release-notes-intro.md
+
       - name: Create or update GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -95,9 +108,16 @@ jobs:
         run: |
           artifact="./artifacts/release/acmp-api-${GITHUB_REF_NAME}.tar.gz"
           offline_artifact="./artifacts/release/acmp-offline-bundle-${GITHUB_REF_NAME}.tar.gz"
+          intro_file="./artifacts/release/release-notes-intro.md"
+          intro_body="$(cat "$intro_file")"
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            existing_body="$(gh release view "$GITHUB_REF_NAME" --json body --jq .body)"
+            if [[ "$existing_body" != *"<!-- acmp-release-intro -->"* ]]; then
+              combined_body="${intro_body}"$'\n\n'"${existing_body}"
+              gh release edit "$GITHUB_REF_NAME" --notes "$combined_body"
+            fi
             gh release upload "$GITHUB_REF_NAME" "$artifact" --clobber
             gh release upload "$GITHUB_REF_NAME" "$offline_artifact" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" "$artifact" "$offline_artifact" --generate-notes --title "$GITHUB_REF_NAME"
+            gh release create "$GITHUB_REF_NAME" "$artifact" "$offline_artifact" --generate-notes --notes "$intro_body" --title "$GITHUB_REF_NAME"
           fi

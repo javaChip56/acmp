@@ -195,6 +195,22 @@ Copy-Item .\deploy\.env.example .\deploy\.env
 docker compose --env-file .\deploy\.env -f .\deploy\docker-compose.yml up --build -d
 ```
 
+## Release Artifacts
+
+Tagged releases (`v*`) now publish two main GitHub release assets:
+
+- `acmp-api-<version>.tar.gz`
+  The published API application artifact.
+
+- `acmp-offline-bundle-<version>.tar.gz`
+  An offline deployment bundle that includes:
+  - prebuilt Docker image archives for the API, MiniKMS, and PostgreSQL
+  - [docker-compose.offline.yml](d:/Research/acmp/deploy/docker-compose.offline.yml)
+  - offline environment templates
+  - import script and deployment runbook
+
+Use the offline bundle when the target host should not need internet access to start the stack.
+
 Run the sample recipient host:
 
 ```powershell
@@ -229,6 +245,9 @@ dotnet run --project .\samples\MyCompany.AuthPlatform.RecipientSample
 
 - [offline_deployment.md](d:/Research/acmp/docs/offline_deployment.md)
   Air-gapped/offline deployment guide using prebuilt Docker image archives and an offline compose stack.
+
+- [release_checklist.md](d:/Research/acmp/docs/release_checklist.md)
+  Short operator checklist for choosing the right release asset and validating connected or offline deployment.
 
 - [recipient_runtime_setup.md](d:/Research/acmp/docs/recipient_runtime_setup.md)
   Recipient-side encrypted package loading setup for service validation and client signing, including PEM private-key runtime configuration for `ExternalRsaPublicKey`.
