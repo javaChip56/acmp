@@ -220,8 +220,6 @@ if (string.Equals(miniKmsConfiguration.Provider, MiniKmsOptions.RemoteProvider, 
     _ = miniKms.ActiveKeyVersion;
 }
 
-await EnsureApiReadyAsync(app.Services, miniKms, miniKmsConfiguration, persistence);
-
 if (string.Equals(persistence.Provider, PersistenceOptions.SqlServerProvider, StringComparison.OrdinalIgnoreCase))
 {
     await app.Services.ApplyAuthPlatformSqlServerMigrationsAsync();
@@ -230,6 +228,8 @@ else if (string.Equals(persistence.Provider, PersistenceOptions.PostgresProvider
 {
     await app.Services.ApplyAuthPlatformPostgresMigrationsAsync();
 }
+
+await EnsureApiReadyAsync(app.Services, miniKms, miniKmsConfiguration, persistence);
 
 using (var scope = app.Services.CreateScope())
 {

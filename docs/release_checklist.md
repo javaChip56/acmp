@@ -80,6 +80,8 @@ After startup:
 - confirm seeded/demo data exists only where expected
 - confirm persistence provider matches the intended deployment
 
+If you hit a startup/runtime defect that is fixed in source after the bundle was created, regenerate the release artifact or offline bundle before retrying deployment. Redeploying an older archive will not include the fix.
+
 ## 5. If You Need Recipient Runtime Validation
 
 Use:
