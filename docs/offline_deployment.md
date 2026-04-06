@@ -9,6 +9,13 @@ The pattern is:
 3. load the images on the offline host
 4. start the offline compose stack
 
+The offline release bundle preserves the expected repo-style paths such as:
+
+- `deploy/docker-compose.offline.yml`
+- `deploy/.env.offline.example`
+- `deploy/scripts/import-offline-images.ps1`
+- `deploy/artifacts/acmp-api-offline.tar`
+
 ## Files
 
 - [docker-compose.offline.yml](d:/Research/acmp/deploy/docker-compose.offline.yml)
@@ -50,6 +57,13 @@ Copy-Item .\deploy\.env.offline.example .\deploy\.env.offline
 .\deploy\scripts\import-offline-images.ps1
 ```
 
+The import script also normalizes the ACMP image tags to:
+
+- `acmp-api:offline`
+- `acmp-minikms:offline`
+
+So the default [.env.offline.example](d:/Research/acmp/deploy/.env.offline.example#L1) works even when the release bundle was originally built with versioned image tags.
+
 3. Start the stack:
 
 ```powershell
@@ -76,6 +90,35 @@ Invoke-RestMethod http://localhost:8081/ready
 - The offline host does not need internet access as long as the required images have already been imported.
 - The default image names in [.env.offline.example](d:/Research/acmp/deploy/.env.offline.example#L1) match the tags produced by [export-offline-images.ps1](d:/Research/acmp/deploy/scripts/export-offline-images.ps1#L1).
 - If you retag the images, update `.env.offline` to match.
+
+## If Docker Still Tries To Reach The Registry
+
+That usually means Docker Compose cannot find one of the image tags referenced in `.env.offline`.
+
+Check the locally available images:
+
+```powershell
+docker images
+```
+
+The ACMP images should be present as:
+
+- `acmp-api:offline`
+- `acmp-minikms:offline`
+- `postgres:16`
+
+If needed, retag manually:
+
+```powershell
+docker tag acmp-api:v1.2.0 acmp-api:offline
+docker tag acmp-minikms:v1.2.0 acmp-minikms:offline
+```
+
+Then retry:
+
+```powershell
+docker compose --env-file .\deploy\.env.offline -f .\deploy\docker-compose.offline.yml up -d
+```
 
 ## Cleanup
 

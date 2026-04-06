@@ -51,22 +51,24 @@ jobs:
 
       - name: Build offline Docker images
         shell: pwsh
-        run: ./deploy/scripts/export-offline-images.ps1 -ApiImage "acmp-api:${{ inputs.release_version }}" -MiniKmsImage "acmp-minikms:${{ inputs.release_version }}" -OutputDirectory ".\deploy\artifacts"
+        run: ./deploy/scripts/export-offline-images.ps1 -ApiImage "acmp-api:offline" -MiniKmsImage "acmp-minikms:offline" -OutputDirectory ".\deploy\artifacts"
 
       - name: Package offline deployment bundle
         shell: bash
         run: |
-          mkdir -p ./artifacts/release/offline-bundle
-          cp ./deploy/docker-compose.offline.yml ./artifacts/release/offline-bundle/
-          cp ./deploy/.env.offline.example ./artifacts/release/offline-bundle/
-          cp ./deploy/.env.example ./artifacts/release/offline-bundle/
-          cp ./deploy/scripts/import-offline-images.ps1 ./artifacts/release/offline-bundle/
-          cp ./docs/offline_deployment.md ./artifacts/release/offline-bundle/
-          cp ./docs/local_deployment.md ./artifacts/release/offline-bundle/
-          cp ./docs/release_checklist.md ./artifacts/release/offline-bundle/
-          cp ./deploy/artifacts/acmp-api-offline.tar ./artifacts/release/offline-bundle/
-          cp ./deploy/artifacts/acmp-minikms-offline.tar ./artifacts/release/offline-bundle/
-          cp ./deploy/artifacts/postgres-16.tar ./artifacts/release/offline-bundle/
+          mkdir -p ./artifacts/release/offline-bundle/deploy/scripts
+          mkdir -p ./artifacts/release/offline-bundle/deploy/artifacts
+          mkdir -p ./artifacts/release/offline-bundle/docs
+          cp ./deploy/docker-compose.offline.yml ./artifacts/release/offline-bundle/deploy/
+          cp ./deploy/.env.offline.example ./artifacts/release/offline-bundle/deploy/
+          cp ./deploy/.env.example ./artifacts/release/offline-bundle/deploy/
+          cp ./deploy/scripts/import-offline-images.ps1 ./artifacts/release/offline-bundle/deploy/scripts/
+          cp ./docs/offline_deployment.md ./artifacts/release/offline-bundle/docs/
+          cp ./docs/local_deployment.md ./artifacts/release/offline-bundle/docs/
+          cp ./docs/release_checklist.md ./artifacts/release/offline-bundle/docs/
+          cp ./deploy/artifacts/acmp-api-offline.tar ./artifacts/release/offline-bundle/deploy/artifacts/
+          cp ./deploy/artifacts/acmp-minikms-offline.tar ./artifacts/release/offline-bundle/deploy/artifacts/
+          cp ./deploy/artifacts/postgres-16.tar ./artifacts/release/offline-bundle/deploy/artifacts/
           tar -czf "./artifacts/release/acmp-offline-bundle-${{ inputs.release_version }}.tar.gz" -C ./artifacts/release/offline-bundle .
 
       - name: Render release notes preview

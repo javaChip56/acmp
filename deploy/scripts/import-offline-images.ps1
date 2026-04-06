@@ -21,7 +21,26 @@ foreach ($archive in $archives)
     }
 
     Write-Host "Loading image archive $archive"
-    docker load -i $archive
+    $loadOutput = docker load -i $archive
+    $loadOutput | ForEach-Object { Write-Host $_ }
+
+    foreach ($line in $loadOutput)
+    {
+        if ($line -match "Loaded image:\s+(?<image>\S+)")
+        {
+            $loadedImage = $Matches["image"]
+            if ($loadedImage -match "^acmp-api:")
+            {
+                Write-Host "Tagging $loadedImage as acmp-api:offline"
+                docker tag $loadedImage "acmp-api:offline"
+            }
+            elseif ($loadedImage -match "^acmp-minikms:")
+            {
+                Write-Host "Tagging $loadedImage as acmp-minikms:offline"
+                docker tag $loadedImage "acmp-minikms:offline"
+            }
+        }
+    }
 }
 
 Write-Host "Offline image import complete."
