@@ -24,3 +24,6 @@ NUL
 tmp-rolecheck.stderr.log
 tmp-rolecheck.stdout.log
 msbuild-ui.log
+deploy/.env
+deploy/.env.offline
+deploy/artifacts/

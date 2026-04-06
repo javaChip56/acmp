@@ -1,0 +1,14 @@
+**/bin/
+**/obj/
+**/.vs/
+**/.idea/
+**/.vscode/
+**/TestResults/
+**/*.user
+**/*.suo
+.git
+.gitignore
+tmp-*.log
+msbuild-ui.log
+src/MyCompany.Security.MiniKms/App_Data/
+deploy/.env

@@ -1,0 +1,92 @@
+services:
+  postgres:
+    image: ${ACMP_POSTGRES_IMAGE}
+    container_name: acmp-postgres
+    environment:
+      POSTGRES_DB: ${ACMP_POSTGRES_DB}
+      POSTGRES_USER: ${ACMP_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${ACMP_POSTGRES_PASSWORD}
+    ports:
+      - "${ACMP_POSTGRES_PORT}:5432"
+    volumes:
+      - acmp-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ACMP_POSTGRES_USER} -d ${ACMP_POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minikms:
+    image: ${ACMP_MINIKMS_IMAGE}
+    container_name: acmp-minikms
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      MiniKms__DemoModeEnabled: "false"
+      MiniKms__PersistenceProvider: Postgres
+      MiniKms__ActiveKeyVersion: ${ACMP_MINIKMS_ACTIVE_KEY_VERSION}
+      MiniKms__Postgres__ConnectionString: Host=postgres;Port=5432;Database=${ACMP_POSTGRES_DB};Username=${ACMP_POSTGRES_USER};Password=${ACMP_POSTGRES_PASSWORD}
+      MiniKms__InternalJwt__KeySource: MiniKmsState
+      MiniKms__InternalJwt__Issuer: ${ACMP_INTERNAL_JWT_ISSUER}
+      MiniKms__InternalJwt__Audience: ${ACMP_INTERNAL_JWT_AUDIENCE}
+      MiniKms__InternalJwt__ActiveKeyVersion: ${ACMP_INTERNAL_JWT_ACTIVE_KEY_VERSION}
+      MiniKms__InternalJwt__SigningKey: ${ACMP_INTERNAL_JWT_BOOTSTRAP_SIGNING_KEY}
+      MiniKms__InternalJwt__Subject: ${ACMP_INTERNAL_JWT_SUBJECT}
+      MiniKms__InternalJwt__TokenLifetimeMinutes: ${ACMP_INTERNAL_JWT_TOKEN_LIFETIME_MINUTES}
+      MiniKms__InternalJwt__ManagedState__Provider: Postgres
+      MiniKms__InternalJwt__ManagedState__Postgres__ConnectionString: Host=postgres;Port=5432;Database=${ACMP_POSTGRES_DB};Username=${ACMP_POSTGRES_USER};Password=${ACMP_POSTGRES_PASSWORD}
+      MiniKms__MasterKeys__kms-v1: ${ACMP_MINIKMS_MASTER_KEY}
+    ports:
+      - "${ACMP_MINIKMS_PORT}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/ready > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    image: ${ACMP_API_IMAGE}
+    container_name: acmp-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minikms:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      Persistence__Provider: Postgres
+      Persistence__Postgres__ConnectionString: Host=postgres;Port=5432;Database=${ACMP_POSTGRES_DB};Username=${ACMP_POSTGRES_USER};Password=${ACMP_POSTGRES_PASSWORD}
+      Persistence__Postgres__ApplyMigrationsOnStartup: "true"
+      DemoMode__SeedOnStartup: "true"
+      Authentication__Mode: EmbeddedIdentity
+      Authentication__EmbeddedIdentity__Issuer: ${ACMP_EMBEDDED_IDENTITY_ISSUER}
+      Authentication__EmbeddedIdentity__Audience: ${ACMP_EMBEDDED_IDENTITY_AUDIENCE}
+      Authentication__EmbeddedIdentity__SigningKey: ${ACMP_EMBEDDED_IDENTITY_SIGNING_KEY}
+      Authentication__EmbeddedIdentity__AccessTokenLifetimeMinutes: ${ACMP_EMBEDDED_IDENTITY_TOKEN_LIFETIME_MINUTES}
+      MiniKms__Provider: RemoteMiniKms
+      MiniKms__ActiveKeyVersion: ${ACMP_MINIKMS_ACTIVE_KEY_VERSION}
+      MiniKms__Remote__BaseUrl: http://minikms:8080
+      MiniKms__Remote__TimeoutSeconds: 15
+      MiniKms__Remote__InternalJwt__KeySource: MiniKmsState
+      MiniKms__Remote__InternalJwt__Issuer: ${ACMP_INTERNAL_JWT_ISSUER}
+      MiniKms__Remote__InternalJwt__Audience: ${ACMP_INTERNAL_JWT_AUDIENCE}
+      MiniKms__Remote__InternalJwt__ActiveKeyVersion: ${ACMP_INTERNAL_JWT_ACTIVE_KEY_VERSION}
+      MiniKms__Remote__InternalJwt__SigningKey: ${ACMP_INTERNAL_JWT_BOOTSTRAP_SIGNING_KEY}
+      MiniKms__Remote__InternalJwt__Subject: ${ACMP_INTERNAL_JWT_SUBJECT}
+      MiniKms__Remote__InternalJwt__TokenLifetimeMinutes: ${ACMP_INTERNAL_JWT_TOKEN_LIFETIME_MINUTES}
+      MiniKms__Remote__InternalJwt__ManagedState__Provider: Postgres
+      MiniKms__Remote__InternalJwt__ManagedState__Postgres__ConnectionString: Host=postgres;Port=5432;Database=${ACMP_POSTGRES_DB};Username=${ACMP_POSTGRES_USER};Password=${ACMP_POSTGRES_PASSWORD}
+    ports:
+      - "${ACMP_API_PORT}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/ready > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  acmp-postgres-data:

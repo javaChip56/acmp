@@ -55,11 +55,37 @@ jobs:
           mkdir -p ./artifacts/release
           tar -czf "./artifacts/release/acmp-api-${GITHUB_REF_NAME}.tar.gz" -C ./artifacts/publish/api .
 
+      - name: Build offline Docker images
+        shell: pwsh
+        run: ./deploy/scripts/export-offline-images.ps1 -ApiImage "acmp-api:${{ github.ref_name }}" -MiniKmsImage "acmp-minikms:${{ github.ref_name }}" -OutputDirectory ".\deploy\artifacts"
+
+      - name: Package offline deployment bundle
+        shell: bash
+        run: |
+          mkdir -p ./artifacts/release/offline-bundle
+          cp ./deploy/docker-compose.offline.yml ./artifacts/release/offline-bundle/
+          cp ./deploy/.env.offline.example ./artifacts/release/offline-bundle/
+          cp ./deploy/.env.example ./artifacts/release/offline-bundle/
+          cp ./deploy/scripts/import-offline-images.ps1 ./artifacts/release/offline-bundle/
+          cp ./docs/offline_deployment.md ./artifacts/release/offline-bundle/
+          cp ./docs/local_deployment.md ./artifacts/release/offline-bundle/
+          cp ./deploy/artifacts/acmp-api-offline.tar ./artifacts/release/offline-bundle/
+          cp ./deploy/artifacts/acmp-minikms-offline.tar ./artifacts/release/offline-bundle/
+          cp ./deploy/artifacts/postgres-16.tar ./artifacts/release/offline-bundle/
+          tar -czf "./artifacts/release/acmp-offline-bundle-${GITHUB_REF_NAME}.tar.gz" -C ./artifacts/release/offline-bundle .
+
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
           name: acmp-api-${{ github.ref_name }}
           path: artifacts/release/acmp-api-${{ github.ref_name }}.tar.gz
+          if-no-files-found: error
+
+      - name: Upload offline deployment bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: acmp-offline-bundle-${{ github.ref_name }}
+          path: artifacts/release/acmp-offline-bundle-${{ github.ref_name }}.tar.gz
           if-no-files-found: error
 
       - name: Create or update GitHub release
@@ -68,8 +94,10 @@ jobs:
         shell: bash
         run: |
           artifact="./artifacts/release/acmp-api-${GITHUB_REF_NAME}.tar.gz"
+          offline_artifact="./artifacts/release/acmp-offline-bundle-${GITHUB_REF_NAME}.tar.gz"
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" "$artifact" --clobber
+            gh release upload "$GITHUB_REF_NAME" "$offline_artifact" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" "$artifact" --generate-notes --title "$GITHUB_REF_NAME"
+            gh release create "$GITHUB_REF_NAME" "$artifact" "$offline_artifact" --generate-notes --title "$GITHUB_REF_NAME"
           fi

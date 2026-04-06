@@ -188,6 +188,13 @@ Run the MiniKMS service:
 dotnet run --project .\src\MyCompany.Security.MiniKms
 ```
 
+Run the local Docker Compose stack:
+
+```powershell
+Copy-Item .\deploy\.env.example .\deploy\.env
+docker compose --env-file .\deploy\.env -f .\deploy\docker-compose.yml up --build -d
+```
+
 Run the sample recipient host:
 
 ```powershell
@@ -216,6 +223,12 @@ dotnet run --project .\samples\MyCompany.AuthPlatform.RecipientSample
 
 - [minikms_service.md](d:/Research/acmp/docs/minikms_service.md)
   MiniKMS service configuration, persistence, readiness, and key-management runbook.
+
+- [local_deployment.md](d:/Research/acmp/docs/local_deployment.md)
+  Local Docker Compose deployment guide for the API, MiniKMS, and PostgreSQL stack.
+
+- [offline_deployment.md](d:/Research/acmp/docs/offline_deployment.md)
+  Air-gapped/offline deployment guide using prebuilt Docker image archives and an offline compose stack.
 
 - [recipient_runtime_setup.md](d:/Research/acmp/docs/recipient_runtime_setup.md)
   Recipient-side encrypted package loading setup for service validation and client signing, including PEM private-key runtime configuration for `ExternalRsaPublicKey`.
