@@ -221,6 +221,9 @@ dotnet run --project .\samples\MyCompany.AuthPlatform.RecipientSample
 
 ## Key Documentation
 
+- [how_to_use_acmp.md](d:/Research/acmp/docs/how_to_use_acmp.md)
+  Practical end-to-end guide for operators, recipient services, and client services using ACMP.
+
 - [auth_platform_requirements_baseline.md](d:/Research/acmp/docs/auth_platform_requirements_baseline.md)
   Baseline product and scope requirements.
 
