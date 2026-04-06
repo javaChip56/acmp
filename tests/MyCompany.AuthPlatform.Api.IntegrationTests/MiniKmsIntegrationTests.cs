@@ -297,6 +297,7 @@ public sealed class MiniKmsIntegrationTests
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Development");
+            builder.DisableWindowsEventLog();
             builder.ConfigureAppConfiguration((_, configBuilder) =>
             {
                 var overrides = new Dictionary<string, string?>
@@ -357,6 +358,7 @@ public sealed class MiniKmsIntegrationTests
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Development");
+            builder.DisableWindowsEventLog();
             builder.ConfigureAppConfiguration((_, configBuilder) =>
             {
                 configBuilder.AddInMemoryCollection(new Dictionary<string, string?>

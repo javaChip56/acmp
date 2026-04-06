@@ -138,6 +138,7 @@ public sealed class MiniKmsDatabaseIntegrationTests
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Development");
+            builder.DisableWindowsEventLog();
             builder.ConfigureAppConfiguration((_, configBuilder) =>
             {
                 configBuilder.AddInMemoryCollection(_overrides);

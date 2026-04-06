@@ -128,6 +128,7 @@ public sealed class DatabaseProviderIntegrationTests
         protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
         {
             builder.UseEnvironment("Development");
+            builder.DisableWindowsEventLog();
             builder.ConfigureAppConfiguration((_, configBuilder) =>
             {
                 configBuilder.AddInMemoryCollection(_overrides);

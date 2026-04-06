@@ -184,3 +184,41 @@ jobs:
           name: postgres-integration-results
           path: artifacts/postgres-integration
           if-no-files-found: error
+
+  ui-tests:
+    name: UI Tests
+    runs-on: ubuntu-latest
+    needs: tests
+
+    env:
+      RUN_UI_TESTS: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore ./Acmp.sln
+
+      - name: Build
+        run: dotnet build ./Acmp.sln --configuration Release --no-restore
+
+      - name: Install Playwright Chromium
+        shell: pwsh
+        run: ./tests/MyCompany.AuthPlatform.Api.IntegrationTests/bin/Release/net8.0/playwright.ps1 install --with-deps chromium
+
+      - name: Run UI tests
+        run: dotnet test ./tests/MyCompany.AuthPlatform.Api.IntegrationTests/MyCompany.AuthPlatform.Api.IntegrationTests.csproj --configuration Release --no-build --filter "Category=UI" --logger "trx;LogFileName=ui-tests.trx" --results-directory ./artifacts/ui-tests
+
+      - name: Upload UI test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-test-results
+          path: artifacts/ui-tests
+          if-no-files-found: error

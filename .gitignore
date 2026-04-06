@@ -23,3 +23,4 @@ src/MyCompany.Security.MiniKms/App_Data/
 NUL
 tmp-rolecheck.stderr.log
 tmp-rolecheck.stdout.log
+msbuild-ui.log
